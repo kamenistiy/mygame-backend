@@ -4,35 +4,36 @@ from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 import sqlite3
 from typing import Optional
+
 print("=== STARTING APP ===")
 
-# Создаём приложение FastAPI
 app = FastAPI()
+
+# Простой тестовый эндпоинт (оставим для проверки)
 @app.get("/ping")
 def ping():
     return {"ping": "pong"}
+
 from fastapi.middleware.cors import CORSMiddleware
-@app.get("/test")
-def test():
-    return {"message": "test ok"}
-print("Registered GET /test")
-# Разрешаем запросы отовсюду (для разработки)
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # В продакшне заменишь на конкретный адрес
+    allow_origins=["*"],
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
 # --- Работа с базой данных ---
+DB_PATH = '/tmp/game.db'  # используем доступную для записи директорию
+
 def init_db():
-    print("Database initialized")
-    """Создаёт таблицу players, если её нет"""
-    conn = sqlite3.connect('game.db')  # подключение к файлу базы
+    print("Initializing database...")
+    conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS players (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
-            telegram_id INTEGER UNIQUE,   -- уникальный ID из Telegram
+            telegram_id INTEGER UNIQUE,
             name TEXT,
             level INTEGER DEFAULT 1,
             exp INTEGER DEFAULT 0,
@@ -41,11 +42,12 @@ def init_db():
     ''')
     conn.commit()
     conn.close()
+    print("Database initialized (table ensured)")
 
-# Вызываем инициализацию при старте сервера
+# Вызываем при старте
 init_db()
 
-# --- Модели данных (что мы ожидаем от клиента и что отдаём) ---
+# --- Модели данных ---
 class PlayerCreate(BaseModel):
     telegram_id: int
     name: str
@@ -61,14 +63,32 @@ class PlayerUpdate(BaseModel):
 def root():
     return {"message": "Сервер игры работает!"}
 
-# Получить данные игрока по telegram_id
+@app.get("/test")
+def test():
+    return {"message": "test ok"}
+
 @app.get("/player/{telegram_id}")
 def get_player(telegram_id: int):
-    return {"telegram_id": telegram_id, "message": "player endpoint works"}
-# Создать нового игрока
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+    cursor.execute("SELECT * FROM players WHERE telegram_id = ?", (telegram_id,))
+    player = cursor.fetchone()
+    conn.close()
+    if player:
+        return {
+            "id": player[0],
+            "telegram_id": player[1],
+            "name": player[2],
+            "level": player[3],
+            "exp": player[4],
+            "gold": player[5]
+        }
+    else:
+        raise HTTPException(status_code=404, detail="Player not found")
+
 @app.post("/player")
 def create_player(player: PlayerCreate):
-    conn = sqlite3.connect('game.db')
+    conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
     try:
         cursor.execute(
@@ -76,7 +96,6 @@ def create_player(player: PlayerCreate):
             (player.telegram_id, player.name)
         )
         conn.commit()
-        # Возвращаем только что созданного игрока
         new_id = cursor.lastrowid
         cursor.execute("SELECT * FROM players WHERE id = ?", (new_id,))
         new_player = cursor.fetchone()
@@ -92,36 +111,24 @@ def create_player(player: PlayerCreate):
     except sqlite3.IntegrityError:
         conn.close()
         raise HTTPException(status_code=400, detail="Player with this telegram_id already exists")
-   
-print("Registered POST /player")
-# Обновить данные игрока (например, после клика)
+
 @app.put("/player/{telegram_id}")
 def update_player(telegram_id: int, update: PlayerUpdate):
-    conn = sqlite3.connect('game.db')
+    conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
-    # Сначала проверим, есть ли игрок
     cursor.execute("SELECT * FROM players WHERE telegram_id = ?", (telegram_id,))
     player = cursor.fetchone()
     if not player:
         conn.close()
         raise HTTPException(status_code=404, detail="Player not found")
-    
-    # Распаковываем текущие данные игрока
+
+    # Распаковка текущих данных
     player_id, tg_id, name, current_level, current_exp, current_gold = player
-    
-    # Определяем новый опыт (если передан)
-    new_exp = current_exp
-    if update.exp is not None:
-        new_exp = update.exp
-    
-    # Определяем новое золото (если передан)
-    new_gold = current_gold
-    if update.gold is not None:
-        new_gold = update.gold
-    
-    # --- Логика расчёта уровня по опыту ---
-    
-    # Уровни 1-7(каждый последующий требует х2 опыта): 2: 20-39, 3: 40-79, 4: 80-159, 5: 160-319, 6: 320-639, 7: 640-1279(пока финальный).
+
+    new_exp = current_exp if update.exp is None else update.exp
+    new_gold = current_gold if update.gold is None else update.gold
+
+    # Логика уровней (оставляем твою)
     new_level = 1
     if new_exp >= 20:
         new_level = 2
@@ -135,25 +142,19 @@ def update_player(telegram_id: int, update: PlayerUpdate):
         new_level = 6
     if new_exp >= 640:
         new_level = 7
-    # Можно добавить больше уровней или придумать формулу посложнее
-    
-    # Если уровень изменился, обновляем его
+
     if new_level != current_level:
-        # Обновляем уровень в базе
         cursor.execute(
             "UPDATE players SET exp = ?, gold = ?, level = ? WHERE telegram_id = ?",
             (new_exp, new_gold, new_level, telegram_id)
         )
     else:
-        # Иначе обновляем только опыт и золото
         cursor.execute(
             "UPDATE players SET exp = ?, gold = ? WHERE telegram_id = ?",
             (new_exp, new_gold, telegram_id)
         )
-    
+
     conn.commit()
-    
-    # Получаем обновлённые данные
     cursor.execute("SELECT * FROM players WHERE telegram_id = ?", (telegram_id,))
     updated = cursor.fetchone()
     conn.close()
@@ -165,5 +166,5 @@ def update_player(telegram_id: int, update: PlayerUpdate):
         "exp": updated[4],
         "gold": updated[5]
     }
-print("Registered PUT /player/{telegram_id}")
+
 print("=== ALL ROUTES REGISTERED ===")
