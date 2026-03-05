@@ -167,4 +167,23 @@ def update_player(telegram_id: int, update: PlayerUpdate):
         "gold": updated[5]
     }
 
+@app.get("/admin/players")
+def list_players():
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+    cursor.execute("SELECT id, telegram_id, name, level, exp, gold FROM players")
+    players = cursor.fetchall()
+    conn.close()
+    return {
+        "players": [
+            {
+                "id": p[0],
+                "telegram_id": p[1],
+                "name": p[2],
+                "level": p[3],
+                "exp": p[4],
+                "gold": p[5]
+            } for p in players
+        ]
+    }
 print("=== ALL ROUTES REGISTERED ===")
