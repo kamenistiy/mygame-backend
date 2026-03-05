@@ -64,24 +64,7 @@ def root():
 # Получить данные игрока по telegram_id
 @app.get("/player/{telegram_id}")
 def get_player(telegram_id: int):
-    conn = sqlite3.connect('game.db')
-    cursor = conn.cursor()
-    cursor.execute("SELECT * FROM players WHERE telegram_id = ?", (telegram_id,))
-    player = cursor.fetchone()
-    conn.close()
-    if player:
-        return {
-            "id": player[0],
-            "telegram_id": player[1],
-            "name": player[2],
-            "level": player[3],
-            "exp": player[4],
-            "gold": player[5]
-        }
-    else:
-        # Если игрока нет, можно вернуть пустоту или ошибку
-        raise HTTPException(status_code=404, detail="Player not found")
-print("Registered GET /player/{telegram_id}")
+    return {"telegram_id": telegram_id, "message": "player endpoint works"}
 # Создать нового игрока
 @app.post("/player")
 def create_player(player: PlayerCreate):
