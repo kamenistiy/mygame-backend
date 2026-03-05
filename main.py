@@ -4,6 +4,7 @@ from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 import sqlite3
 from typing import Optional
+print("=== STARTING APP ===")
 
 # Создаём приложение FastAPI
 app = FastAPI()
@@ -21,6 +22,7 @@ app.add_middleware(
 )
 # --- Работа с базой данных ---
 def init_db():
+    print("Database initialized")
     """Создаёт таблицу players, если её нет"""
     conn = sqlite3.connect('game.db')  # подключение к файлу базы
     cursor = conn.cursor()
@@ -76,7 +78,7 @@ def get_player(telegram_id: int):
     else:
         # Если игрока нет, можно вернуть пустоту или ошибку
         raise HTTPException(status_code=404, detail="Player not found")
-
+print("Registered GET /player/{telegram_id}")
 # Создать нового игрока
 @app.post("/player")
 def create_player(player: PlayerCreate):
@@ -104,7 +106,8 @@ def create_player(player: PlayerCreate):
     except sqlite3.IntegrityError:
         conn.close()
         raise HTTPException(status_code=400, detail="Player with this telegram_id already exists")
-
+   
+print("Registered POST /player")
 # Обновить данные игрока (например, после клика)
 @app.put("/player/{telegram_id}")
 def update_player(telegram_id: int, update: PlayerUpdate):
@@ -176,3 +179,5 @@ def update_player(telegram_id: int, update: PlayerUpdate):
         "exp": updated[4],
         "gold": updated[5]
     }
+print("Registered PUT /player/{telegram_id}")
+print("=== ALL ROUTES REGISTERED ===")
