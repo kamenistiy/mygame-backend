@@ -7,7 +7,9 @@ from typing import Optional
 
 # Создаём приложение FastAPI
 app = FastAPI()
-
+@app.get("/ping")
+def ping():
+    return {"ping": "pong"}
 from fastapi.middleware.cors import CORSMiddleware
 
 # Разрешаем запросы отовсюду (для разработки)
