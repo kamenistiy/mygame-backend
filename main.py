@@ -2,20 +2,22 @@
 
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
-import sqlite3
+import psycopg2
+from psycopg2.extras import RealDictCursor
 from typing import Optional
+import os
 
 print("=== STARTING APP ===")
 
 app = FastAPI()
 
-# Простой тестовый эндпоинт (оставим для проверки)
+# --- Тестовый эндпоинт ---
 @app.get("/ping")
 def ping():
     return {"ping": "pong"}
 
+# --- CORS ---
 from fastapi.middleware.cors import CORSMiddleware
-
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -23,28 +25,33 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# --- Работа с базой данных ---
-DB_PATH = '/tmp/game.db'  # используем доступную для записи директорию
+# --- Подключение к PostgreSQL ---
+# ВАЖНО: замени на свою Internal Connection String
+DB_URL = "postgresql://krep_user:HBe90ZhbdKHu4FAoAqfOkGMGbacre48x@dpg-d6ktqfhaae7s73al86mg-a/krep"
 
+def get_db():
+    conn = psycopg2.connect(DB_URL, cursor_factory=RealDictCursor)
+    return conn
+
+# --- Инициализация таблицы ---
 def init_db():
-    print("Initializing database...")
-    conn = sqlite3.connect(DB_PATH)
-    cursor = conn.cursor()
-    cursor.execute('''
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute("""
         CREATE TABLE IF NOT EXISTS players (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            telegram_id INTEGER UNIQUE,
+            id SERIAL PRIMARY KEY,
+            telegram_id BIGINT UNIQUE,
             name TEXT,
             level INTEGER DEFAULT 1,
             exp INTEGER DEFAULT 0,
             gold INTEGER DEFAULT 100
         )
-    ''')
+    """)
     conn.commit()
+    cur.close()
     conn.close()
-    print("Database initialized (table ensured)")
+    print("Database initialized (PostgreSQL)")
 
-# Вызываем при старте
 init_db()
 
 # --- Модели данных ---
@@ -57,7 +64,7 @@ class PlayerUpdate(BaseModel):
     gold: Optional[int] = None
     level: Optional[int] = None
 
-# --- API-эндпоинты ---
+# --- Эндпоинты ---
 
 @app.get("/")
 def root():
@@ -69,66 +76,68 @@ def test():
 
 @app.get("/player/{telegram_id}")
 def get_player(telegram_id: int):
-    conn = sqlite3.connect(DB_PATH)
-    cursor = conn.cursor()
-    cursor.execute("SELECT * FROM players WHERE telegram_id = ?", (telegram_id,))
-    player = cursor.fetchone()
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute("SELECT * FROM players WHERE telegram_id = %s", (telegram_id,))
+    player = cur.fetchone()
+    cur.close()
     conn.close()
     if player:
         return {
-            "id": player[0],
-            "telegram_id": player[1],
-            "name": player[2],
-            "level": player[3],
-            "exp": player[4],
-            "gold": player[5]
+            "id": player["id"],
+            "telegram_id": player["telegram_id"],
+            "name": player["name"],
+            "level": player["level"],
+            "exp": player["exp"],
+            "gold": player["gold"]
         }
     else:
         raise HTTPException(status_code=404, detail="Player not found")
 
 @app.post("/player")
 def create_player(player: PlayerCreate):
-    conn = sqlite3.connect(DB_PATH)
-    cursor = conn.cursor()
+    conn = get_db()
+    cur = conn.cursor()
     try:
-        cursor.execute(
-            "INSERT INTO players (telegram_id, name) VALUES (?, ?)",
+        cur.execute(
+            "INSERT INTO players (telegram_id, name) VALUES (%s, %s) RETURNING *",
             (player.telegram_id, player.name)
         )
+        new_player = cur.fetchone()
         conn.commit()
-        new_id = cursor.lastrowid
-        cursor.execute("SELECT * FROM players WHERE id = ?", (new_id,))
-        new_player = cursor.fetchone()
+        cur.close()
         conn.close()
         return {
-            "id": new_player[0],
-            "telegram_id": new_player[1],
-            "name": new_player[2],
-            "level": new_player[3],
-            "exp": new_player[4],
-            "gold": new_player[5]
+            "id": new_player["id"],
+            "telegram_id": new_player["telegram_id"],
+            "name": new_player["name"],
+            "level": new_player["level"],
+            "exp": new_player["exp"],
+            "gold": new_player["gold"]
         }
-    except sqlite3.IntegrityError:
+    except psycopg2.IntegrityError:
+        conn.rollback()
+        cur.close()
         conn.close()
         raise HTTPException(status_code=400, detail="Player with this telegram_id already exists")
 
 @app.put("/player/{telegram_id}")
 def update_player(telegram_id: int, update: PlayerUpdate):
-    conn = sqlite3.connect(DB_PATH)
-    cursor = conn.cursor()
-    cursor.execute("SELECT * FROM players WHERE telegram_id = ?", (telegram_id,))
-    player = cursor.fetchone()
+    conn = get_db()
+    cur = conn.cursor()
+    # Сначала получаем текущие данные
+    cur.execute("SELECT * FROM players WHERE telegram_id = %s", (telegram_id,))
+    player = cur.fetchone()
     if not player:
+        cur.close()
         conn.close()
         raise HTTPException(status_code=404, detail="Player not found")
 
-    # Распаковка текущих данных
-    player_id, tg_id, name, current_level, current_exp, current_gold = player
+    # Определяем новые значения
+    new_exp = player["exp"] if update.exp is None else update.exp
+    new_gold = player["gold"] if update.gold is None else update.gold
 
-    new_exp = current_exp if update.exp is None else update.exp
-    new_gold = current_gold if update.gold is None else update.gold
-
-    # Логика уровней (оставляем твою)
+    # Логика уровней
     new_level = 1
     if new_exp >= 20:
         new_level = 2
@@ -143,46 +152,33 @@ def update_player(telegram_id: int, update: PlayerUpdate):
     if new_exp >= 640:
         new_level = 7
 
-    if new_level != current_level:
-        cursor.execute(
-            "UPDATE players SET exp = ?, gold = ?, level = ? WHERE telegram_id = ?",
-            (new_exp, new_gold, new_level, telegram_id)
-        )
-    else:
-        cursor.execute(
-            "UPDATE players SET exp = ?, gold = ? WHERE telegram_id = ?",
-            (new_exp, new_gold, telegram_id)
-        )
-
+    # Обновляем
+    cur.execute(
+        "UPDATE players SET exp = %s, gold = %s, level = %s WHERE telegram_id = %s RETURNING *",
+        (new_exp, new_gold, new_level, telegram_id)
+    )
+    updated = cur.fetchone()
     conn.commit()
-    cursor.execute("SELECT * FROM players WHERE telegram_id = ?", (telegram_id,))
-    updated = cursor.fetchone()
+    cur.close()
     conn.close()
     return {
-        "id": updated[0],
-        "telegram_id": updated[1],
-        "name": updated[2],
-        "level": updated[3],
-        "exp": updated[4],
-        "gold": updated[5]
+        "id": updated["id"],
+        "telegram_id": updated["telegram_id"],
+        "name": updated["name"],
+        "level": updated["level"],
+        "exp": updated["exp"],
+        "gold": updated["gold"]
     }
+
 @app.get("/admin/players")
 def list_players():
-    conn = sqlite3.connect(DB_PATH)
-    cursor = conn.cursor()
-    cursor.execute("SELECT id, telegram_id, name, level, exp, gold FROM players")
-    players = cursor.fetchall()
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute("SELECT id, telegram_id, name, level, exp, gold FROM players")
+    players = cur.fetchall()
+    cur.close()
     conn.close()
-    return {
-        "players": [
-            {
-                "id": p[0],
-                "telegram_id": p[1],
-                "name": p[2],
-                "level": p[3],
-                "exp": p[4],
-                "gold": p[5]
-            } for p in players
-        ]
-    }
+    return {"players": players}
+
 print("=== ALL ROUTES REGISTERED ===")
+
