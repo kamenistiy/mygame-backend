@@ -12,7 +12,10 @@ app = FastAPI()
 def ping():
     return {"ping": "pong"}
 from fastapi.middleware.cors import CORSMiddleware
-
+@app.get("/test")
+def test():
+    return {"message": "test ok"}
+print("Registered GET /test")
 # Разрешаем запросы отовсюду (для разработки)
 app.add_middleware(
     CORSMiddleware,
