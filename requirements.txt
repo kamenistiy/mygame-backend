@@ -1,7 +1,3 @@
 fastapi
 uvicorn
-<<<<<<< HEAD
 python-multipart
-=======
-python-multipart
->>>>>>> 940eb162e172aa8814ca6767bd218befcdad60d2
