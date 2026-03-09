@@ -173,11 +173,9 @@ def update_player(telegram_id: int, update: PlayerUpdate):
 @app.get("/admin/players")
 def list_players():
     conn = get_db()
-    cur = conn.cursor()
-    cur.execute("SELECT id, telegram_id, name, level, exp, gold FROM players")
-    players = cur.fetchall()
-    cur.close()
-        # Получаем общее количество игроков
+    cursor = conn.cursor()
+    cursor.execute("SELECT id, telegram_id, name, level, exp, gold FROM players")
+    players = cursor.fetchall()
     cursor.execute("SELECT COUNT(*) FROM players")
     total = cursor.fetchone()['count']
     conn.close()
