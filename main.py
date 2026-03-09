@@ -177,8 +177,11 @@ def list_players():
     cur.execute("SELECT id, telegram_id, name, level, exp, gold FROM players")
     players = cur.fetchall()
     cur.close()
+        # Получаем общее количество игроков
+    cursor.execute("SELECT COUNT(*) FROM players")
+    total = cursor.fetchone()['count']
     conn.close()
-    return {"players": players}
+    return {"total": total, "players": players}
 
 print("=== ALL ROUTES REGISTERED ===")
 
