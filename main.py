@@ -27,7 +27,7 @@ app.add_middleware(
 
 # --- Подключение к PostgreSQL ---
 # ВАЖНО: замени на свою Internal Connection String
-DB_URL = "postgresql://postgres.onkpedemixygmtllrehp:H7KRedFyy0npAEXH@db.onkpedemixygmtllrehp.supabase.co:5432/postgres?sslmode=require&hostaddr=3.71.225.44"
+DB_URL = "postgresql://postgres.onkpedemixygmtllrehp:6rQ7yNV2gjIsttit@db.onkpedemixygmtllrehp.supabase.co:5432/postgres?sslmode=require&hostaddr=3.71.225.44"
 
 def get_db():
     conn = psycopg2.connect(DB_URL, cursor_factory=RealDictCursor)
