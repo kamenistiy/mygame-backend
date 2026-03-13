@@ -27,7 +27,7 @@ app.add_middleware(
 
 # --- Подключение к PostgreSQL ---
 # ВАЖНО: замени на свою Internal Connection String
-DB_URL = "postgresql://krep_user:HBe90ZhbdKHu4FAoAqfOkGMGbacre48x@dpg-d6ktqfhaae7s73al86mg-a/krep"
+DB_URL = "postgresql://postgres.onkpedemixygmtllrehp:6rQ7yNV2gjIsttit@db.onkpedemixygmtllrehp.supabase.co:5432/postgres?sslmode=require&hostaddr=3.71.225.44"
 
 def get_db():
     conn = psycopg2.connect(DB_URL, cursor_factory=RealDictCursor)
@@ -133,24 +133,28 @@ def update_player(telegram_id: int, update: PlayerUpdate):
         conn.close()
         raise HTTPException(status_code=404, detail="Player not found")
 
-    # Определяем новые значения
-    new_exp = player["exp"] if update.exp is None else update.exp
-    new_gold = player["gold"] if update.gold is None else update.gold
-
-    # Логика уровней
+       # --- Универсальная логика расчёта уровня по опыту ---
+    # Формула: для уровня 1: опыт 0-19
+    # Для уровня n (n>=2): минимальный опыт = 20 * 2^(n-2)
+    # Порог для перехода на следующий уровень удваивается
     new_level = 1
     if new_exp >= 20:
-        new_level = 2
-    if new_exp >= 40:
-        new_level = 3
-    if new_exp >= 80:
-        new_level = 4
-    if new_exp >= 160:
-        new_level = 5
-    if new_exp >= 320:
-        new_level = 6
-    if new_exp >= 640:
-        new_level = 7
+        # Находим максимальный уровень, для которого опыт >= порога
+        # Порог для уровня n: 20 * 2^(n-2)
+        # Решаем неравенство: 20 * 2^(level-2) <= new_exp
+        # 2^(level-2) <= new_exp / 20
+        # level-2 <= log2(new_exp/20)
+        # level <= log2(new_exp/20) + 2
+        # Используем целочисленную арифметику для избежания ошибок с плавающей точкой
+        exp_for_level = new_exp
+        # Начинаем с уровня 2
+        level_candidate = 2
+        while True:
+            min_exp_for_level = 20 * (2 ** (level_candidate - 2))
+            if exp_for_level < min_exp_for_level:
+                break
+            level_candidate += 1
+        new_level = level_candidate - 1
 
     # Обновляем
     cur.execute(
@@ -173,11 +177,9 @@ def update_player(telegram_id: int, update: PlayerUpdate):
 @app.get("/admin/players")
 def list_players():
     conn = get_db()
-    cur = conn.cursor()
-    cur.execute("SELECT id, telegram_id, name, level, exp, gold FROM players")
-    players = cur.fetchall()
-    cur.close()
-        # Получаем общее количество игроков
+    cursor = conn.cursor()
+    cursor.execute("SELECT id, telegram_id, name, level, exp, gold FROM players")
+    players = cursor.fetchall()
     cursor.execute("SELECT COUNT(*) FROM players")
     total = cursor.fetchone()['count']
     conn.close()
