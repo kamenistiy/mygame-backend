@@ -132,7 +132,16 @@ def update_player(telegram_id: int, update: PlayerUpdate):
         cur.close()
         conn.close()
         raise HTTPException(status_code=404, detail="Player not found")
+    # Распаковываем текущие значения
+    current_exp = player["exp"]
+    current_gold = player["gold"]
+    current_level = player["level"]
 
+    # Определяем новые значения (если переданы в запросе)
+    new_exp = current_exp if update.exp is None else update.exp
+    new_gold = current_gold if update.gold is None else update.gold
+
+    
        # --- Универсальная логика расчёта уровня по опыту ---
     # Формула: для уровня 1: опыт 0-19
     # Для уровня n (n>=2): минимальный опыт = 20 * 2^(n-2)
