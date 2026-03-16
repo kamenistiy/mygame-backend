@@ -22,7 +22,7 @@ app.add_middleware(
 
 # --- Подключение к PostgreSQL (Supabase) ---
 # (используй ту же строку, что и раньше, с портом 5432 или 6543)
-DB_URL = "postgresql://postgres.onkpedemixygmtllrehp:твой-пароль@aws-0-eu-central-1.pooler.supabase.com:6543/postgres?sslmode=require"
+DB_URL = "postgresql://postgres.onkpedemixygmtllrehp:6rQ7yNV2gjIsttit@db.onkpedemixygmtllrehp.supabase.co:5432/postgres?sslmode=require&hostaddr=3.71.225.44"
 
 def get_db():
     conn = psycopg2.connect(DB_URL, cursor_factory=RealDictCursor)
