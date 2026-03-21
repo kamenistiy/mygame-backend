@@ -23,11 +23,6 @@ app.add_middleware(
 # --- Подключение к PostgreSQL (Supabase) ---
 # (используй ту же строку, что и раньше, с портом 5432 или 6543)
 DB_URL = "postgresql://postgres.onkpedemixygmtllrehp:6rQ7yNV2gjIsttit@db.onkpedemixygmtllrehp.supabase.co:5432/postgres?sslmode=require&hostaddr=3.71.225.44"
-<<<<<<< HEAD
-
-
-=======
->>>>>>> 161ae2f661b9ff1d1768f842ad062a5d41e5650a
 
 def get_db():
     conn = psycopg2.connect(DB_URL, cursor_factory=RealDictCursor)
@@ -131,3 +126,4 @@ def list_players():
     return {"total": total, "players": players}
 
 print("=== ALL ROUTES REGISTERED ===")
+
