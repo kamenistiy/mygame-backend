@@ -126,3 +126,4 @@ def list_players():
     return {"total": total, "players": players}
 
 print("=== ALL ROUTES REGISTERED ===")
+
