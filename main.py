@@ -22,7 +22,9 @@ app.add_middleware(
 
 # --- Подключение к PostgreSQL (Supabase) ---
 # (используй ту же строку, что и раньше, с портом 5432 или 6543)
-DB_URL = "postgresql://postgres.onkpedemixygmtllrehp:твой-пароль@aws-0-eu-central-1.pooler.supabase.com:6543/postgres?sslmode=require"
+DB_URL = "postgresql://postgres.onkpedemixygmtllrehp:6rQ7yNV2gjIsttit@db.onkpedemixygmtllrehp.supabase.co:5432/postgres?sslmode=require&hostaddr=3.71.225.44"
+
+
 
 def get_db():
     conn = psycopg2.connect(DB_URL, cursor_factory=RealDictCursor)
@@ -53,6 +55,7 @@ def test():
 def get_player(user_id: str):
     conn = get_db()
     cur = conn.cursor()
+    print(f"Получен запрос для user_id: {user_id}")
     cur.execute("SELECT * FROM players WHERE id = %s", (user_id,))
     player = cur.fetchone()
     cur.close()
@@ -63,6 +66,13 @@ def get_player(user_id: str):
         raise HTTPException(status_code=404, detail="Player not found")
 
 # Обновить данные игрока
+def required_exp(level: int) -> int:
+    """Возвращает опыт, необходимый для перехода с level на level+1."""
+    if level == 1:
+        return 20
+    else:
+        return 20 * (2 ** (level - 1))
+
 @app.put("/player/{user_id}")
 def update_player(user_id: str, update: PlayerUpdate):
     conn = get_db()
@@ -83,17 +93,15 @@ def update_player(user_id: str, update: PlayerUpdate):
     # Новые значения (если переданы)
     new_exp = current_exp if update.exp is None else update.exp
     new_gold = current_gold if update.gold is None else update.gold
+    new_level = current_level
 
-    # --- Универсальная логика расчёта уровня по опыту ---
-    new_level = 1
-    if new_exp >= 20:
-        level_candidate = 2
-        while True:
-            min_exp_for_level = 20 * (2 ** (level_candidate - 2))
-            if new_exp < min_exp_for_level:
-                break
-            level_candidate += 1
-        new_level = level_candidate - 1
+    # Если передан опыт, пересчитываем уровень
+    if update.exp is not None:
+        temp_exp = current_exp + update.exp
+        while temp_exp >= required_exp(new_level):
+            temp_exp -= required_exp(new_level)
+            new_level += 1
+        new_exp = temp_exp
 
     # Обновляем запись
     cur.execute(
