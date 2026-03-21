@@ -89,16 +89,20 @@ def update_player(user_id: str, update: PlayerUpdate):
     current_level = player["level"]
 
     # Новые значения (если переданы)
-    new_exp = current_exp if update.exp is None else update.exp
     new_gold = current_gold if update.gold is None else update.gold
     new_level = current_level
+    new_exp = current_exp
 
-    # Если передан опыт, пересчитываем уровень
+    # Если передан опыт, добавляем его и пересчитываем уровень с переносом избытка
     if update.exp is not None:
         temp_exp = current_exp + update.exp
-        while temp_exp >= required_exp(new_level):
-            temp_exp -= required_exp(new_level)
-            new_level += 1
+        while True:
+            need = required_exp(new_level)
+            if temp_exp >= need:
+                temp_exp -= need
+                new_level += 1
+            else:
+                break
         new_exp = temp_exp
 
     # Обновляем запись
