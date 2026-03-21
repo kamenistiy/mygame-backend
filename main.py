@@ -97,11 +97,15 @@ def update_player(user_id: str, update: PlayerUpdate):
 
     # Если передан опыт, добавляем его и пересчитываем уровень
     if update.exp is not None:
-        temp_exp = current_exp + update.exp
+        exp_to_add = update.exp
+        temp_exp = current_exp + exp_to_add
+        print(f"🔹 Before: level={current_level}, exp={current_exp}, add={exp_to_add}, temp={temp_exp}")
         while temp_exp >= required_exp(new_level):
+            print(f"   Level up: {new_level} -> {new_level+1}, need={required_exp(new_level)}, temp={temp_exp}")
             temp_exp -= required_exp(new_level)
             new_level += 1
         new_exp = temp_exp
+        print(f"🔹 After: level={new_level}, exp={new_exp}")
 
     # Обновляем запись
     cur.execute(
@@ -128,4 +132,5 @@ def list_players():
     return {"total": total, "players": players}
 
 print("=== ALL ROUTES REGISTERED ===")
+
 
