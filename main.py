@@ -1,12 +1,16 @@
 # main.py
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, UploadFile, File, Form
 from pydantic import BaseModel
 import psycopg2
 from psycopg2.extras import RealDictCursor
 from typing import Optional
 import os
+import uuid
 from fastapi.middleware.cors import CORSMiddleware
+from supabase import create_client
+from PIL import Image
+import io
 
 print("=== STARTING APP ===")
 
@@ -23,7 +27,9 @@ app.add_middleware(
 # --- Подключение к PostgreSQL (Supabase) ---
 # (используй ту же строку, что и раньше, с портом 5432 или 6543)
 DB_URL = "postgresql://postgres.onkpedemixygmtllrehp:6rQ7yNV2gjIsttit@db.onkpedemixygmtllrehp.supabase.co:5432/postgres?sslmode=require&hostaddr=3.71.225.44"
-
+SUPABASE_URL = "https://onkpedemixygmtllrehp.supabase.co"
+SUPABASE_SERVICE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im9ua3BlZGVtaXh5Z210bGxyZWhwIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3MzA0NzYzOSwiZXhwIjoyMDg4NjIzNjM5fQ.LSUU4rwARPZNhCyeXYdsW4qeffD2UD524KYlFRNz9U8"  # НЕ anon key! Получи в настройках Supabase: Project Settings -> API -> service_role key (сохрани в секрете)
+supabase = create_client(SUPABASE_URL, SUPABASE_SERVICE_KEY)
 def get_db():
     conn = psycopg2.connect(DB_URL, cursor_factory=RealDictCursor)
     return conn
@@ -34,7 +40,7 @@ class PlayerUpdate(BaseModel):
     gold: Optional[int] = None
     level: Optional[int] = None
 
-    
+
 # ========== МОДЕЛИ ДЛЯ ИНВЕНТАРЯ ==========
 class AddItemRequest(BaseModel):
     item_id: str
@@ -149,6 +155,7 @@ def use_item(user_id: str, req: UseItemRequest):
 
     # Если предмет не фолиант (пока не реализовано)
     raise HTTPException(status_code=400, detail="Использование этого предмета ещё не реализовано")
+
 # --- Эндпоинты ---
 
 @app.get("/")
@@ -245,7 +252,68 @@ def list_players():
     cur.close()
     conn.close()
     return {"total": total, "players": players}
+@app.post("/avatar/upload")
+async def upload_avatar(
+    user_id: str = Form(...),
+    request_id: str = Form(...),
+    file: UploadFile = File(...)
+):
+    # 1. Проверка заявки
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute("SELECT status FROM avatar_requests WHERE id = %s AND user_id = %s", (request_id, user_id))
+    req = cur.fetchone()
+    if not req or req['status'] != 'pending':
+        cur.close()
+        conn.close()
+        raise HTTPException(status_code=400, detail="Заявка не найдена или уже обработана")
 
+    # 2. Проверки файла
+    if file.size > 80 * 1024:
+        raise HTTPException(status_code=400, detail="Файл превышает 80 KB")
+    content_type = file.content_type
+    if content_type not in ['image/png', 'image/webp', 'image/gif']:
+        raise HTTPException(status_code=400, detail="Разрешены только PNG, WebP, GIF")
+    # 2b. Проверка размеров и соотношения сторон
+    try:
+        img = Image.open(io.BytesIO(contents))
+        width, height = img.size
+        if width != height:
+            raise HTTPException(status_code=400, detail="Изображение должно быть квадратным (1:1)")
+        if width < 150 or height < 150:
+            raise HTTPException(status_code=400, detail="Минимальный размер 150×150 пикселей")
+        # Опционально: проверка на слишком большой размер (например, максимум 512)
+        if width > 512:
+            raise HTTPException(status_code=400, detail="Максимальный размер 512×512 пикселей")
+    except Exception as e:
+        raise HTTPException(status_code=400, detail="Не удалось прочитать изображение: " + str(e))
+    
+    # 3. Чтение и проверка размеров (опционально)
+    contents = await file.read()
+    # Здесь можно использовать PIL для проверки размеров, но пока пропустим
+
+    # 4. Генерация пути
+    ext = file.filename.split('.')[-1].lower()
+    file_name = f"{user_id}_{uuid.uuid4()}.{ext}"
+    file_path = f"pending/{file_name}"
+
+    # 5. Загрузка в Supabase Storage
+    try:
+        res = supabase.storage.from_("avatars").upload(file_path, contents)
+        if hasattr(res, 'error') and res.error:
+            raise Exception(str(res.error))
+    except Exception as e:
+        cur.close()
+        conn.close()
+        raise HTTPException(status_code=500, detail=f"Ошибка загрузки в хранилище: {e}")
+
+    # 6. Обновление заявки
+    cur.execute("UPDATE avatar_requests SET storage_path = %s WHERE id = %s", (file_path, request_id))
+    conn.commit()
+    cur.close()
+    conn.close()
+
+    return {"success": True}
 print("=== ALL ROUTES REGISTERED ===")
 
 

@@ -2,3 +2,5 @@ fastapi
 uvicorn
 python-multipart
 psycopg2-binary
+supabase
+Pillow>=10.0.0
