@@ -34,6 +34,121 @@ class PlayerUpdate(BaseModel):
     gold: Optional[int] = None
     level: Optional[int] = None
 
+    
+# ========== МОДЕЛИ ДЛЯ ИНВЕНТАРЯ ==========
+class AddItemRequest(BaseModel):
+    item_id: str
+    quantity: int = 1
+
+class UseItemRequest(BaseModel):
+    item_id: str
+    quantity: int = 1
+
+# ========== ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ ==========
+def remove_item_from_inventory(user_id: str, item_id: str, quantity: int = 1) -> bool:
+    conn = get_db()
+    cur = conn.cursor()
+    try:
+        cur.execute("SELECT quantity FROM inventory WHERE user_id = %s AND item_id = %s", (user_id, item_id))
+        row = cur.fetchone()
+        if not row or row['quantity'] < quantity:
+            return False
+        new_qty = row['quantity'] - quantity
+        if new_qty == 0:
+            cur.execute("DELETE FROM inventory WHERE user_id = %s AND item_id = %s", (user_id, item_id))
+        else:
+            cur.execute("UPDATE inventory SET quantity = %s WHERE user_id = %s AND item_id = %s", (new_qty, user_id, item_id))
+        conn.commit()
+        return True
+    except Exception as e:
+        print("Error removing item:", e)
+        return False
+    finally:
+        cur.close()
+        conn.close()
+
+# ========== ЭНДПОИНТЫ ==========
+@app.get("/inventory/{user_id}")
+def get_inventory(user_id: str):
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute("""
+        SELECT i.id, i.name, i.description, i.type, i.class, i.icon, inv.quantity
+        FROM inventory inv
+        JOIN items i ON inv.item_id = i.id
+        WHERE inv.user_id = %s
+    """, (user_id,))
+    items = cur.fetchall()
+    cur.close()
+    conn.close()
+    return items
+
+@app.post("/inventory/add")
+def add_item(user_id: str, req: AddItemRequest):
+    conn = get_db()
+    cur = conn.cursor()
+    try:
+        cur.execute("""
+            INSERT INTO inventory (user_id, item_id, quantity)
+            VALUES (%s, %s, %s)
+            ON CONFLICT (user_id, item_id)
+            DO UPDATE SET quantity = inventory.quantity + EXCLUDED.quantity
+            RETURNING *
+        """, (user_id, req.item_id, req.quantity))
+        result = cur.fetchone()
+        conn.commit()
+        return {"success": True, "item": result}
+    except Exception as e:
+        conn.rollback()
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        cur.close()
+        conn.close()
+
+@app.post("/item/use")
+def use_item(user_id: str, req: UseItemRequest):
+    # 1. Проверяем существование предмета и его тип
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute("SELECT * FROM items WHERE id = %s", (req.item_id,))
+    item = cur.fetchone()
+    if not item:
+        raise HTTPException(status_code=404, detail="Предмет не найден")
+    if item['type'] != 'consumable':
+        raise HTTPException(status_code=400, detail="Этот предмет нельзя использовать")
+
+    # 2. Специальная логика для фолианта
+    if req.item_id == 'avatar_certificate':
+        # Проверяем, нет ли уже активной заявки
+        cur.execute("SELECT id FROM avatar_requests WHERE user_id = %s AND status = 'pending'", (user_id,))
+        pending = cur.fetchone()
+        if pending:
+            cur.close()
+            conn.close()
+            raise HTTPException(status_code=400, detail="У вас уже есть аватар на модерации. Дождитесь решения.")
+
+        # Удаляем один фолиант из инвентаря
+        removed = remove_item_from_inventory(user_id, req.item_id, req.quantity)
+        if not removed:
+            cur.close()
+            conn.close()
+            raise HTTPException(status_code=400, detail="Недостаточно предметов в инвентаре")
+
+        # Создаём заявку на аватар
+        cur = conn.cursor()  # пересоздаём, т.к. remove_item_from_inventory закрыла соединение
+        cur.execute("""
+            INSERT INTO avatar_requests (user_id, status)
+            VALUES (%s, 'pending')
+            RETURNING id
+        """, (user_id,))
+        new_request = cur.fetchone()
+        conn.commit()
+        cur.close()
+        conn.close()
+        return {"success": True, "request_id": new_request['id']}
+
+    # Если предмет не фолиант (пока не реализовано)
+    raise HTTPException(status_code=400, detail="Использование этого предмета ещё не реализовано")
 # --- Эндпоинты ---
 
 @app.get("/")
