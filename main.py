@@ -387,6 +387,7 @@ async def upload_avatar(
 
     # 3. Читаем содержимое файла (ОДИН РАЗ!)
     contents = await file.read()
+    original_filename = file.filename
 
     # 4. Проверка размеров через Pillow
     try:
@@ -419,7 +420,8 @@ async def upload_avatar(
         raise HTTPException(status_code=500, detail=f"Ошибка загрузки в хранилище: {e}")
 
     # 7. Обновление заявки
-    cur.execute("UPDATE avatar_requests SET storage_path = %s WHERE id = %s", (file_path, request_id))
+    cur.execute("UPDATE avatar_requests SET storage_path = %s, original_filename = %s WHERE id = %s",
+            (file_path, original_filename, request_id))
     conn.commit()
     cur.close()
     conn.close()
