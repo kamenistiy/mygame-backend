@@ -229,7 +229,12 @@ def review_avatar(req: AvatarReviewRequest, admin_user_id: str):
             RETURNING id
         """, (user_id, new_path, False))
         avatar_id = cur.fetchone()['id']
-        
+                # 2.1. Если у пользователя ещё нет активного аватара, сделаем этот активным
+        cur.execute("SELECT id FROM user_avatars WHERE user_id = %s AND is_active = true", (user_id,))
+        active = cur.fetchone()
+        if not active:
+            cur.execute("UPDATE user_avatars SET is_active = true WHERE id = %s", (avatar_id,))
+
         # 3. Обновляем статус заявки
         cur.execute("""
             UPDATE avatar_requests
@@ -427,6 +432,26 @@ async def upload_avatar(
     conn.close()
 
     return {"success": True}
+   #Отображение Аватаров пользователей в их профиле
+@app.get("/user-avatar/{user_id}")
+def get_user_avatar(user_id: str):
+    conn = get_db()
+    cur = conn.cursor()
+    # Ищем активный аватар (is_active = true)
+    cur.execute("""
+        SELECT storage_path FROM user_avatars
+        WHERE user_id = %s AND is_active = true
+        LIMIT 1
+    """, (user_id,))
+    row = cur.fetchone()
+    cur.close()
+    conn.close()
+    if row:
+        # Формируем публичную ссылку на файл в Storage
+        public_url = supabase.storage.from_("avatars").get_public_url(row['storage_path'])
+        return {"avatar_url": public_url}
+    else:
+        return {"avatar_url": None}
 print("=== ALL ROUTES REGISTERED ===")
 
 
