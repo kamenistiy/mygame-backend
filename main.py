@@ -382,15 +382,16 @@ async def upload_avatar(
     # 2. Проверки файла
     if file.size > 80 * 1024:
         raise HTTPException(status_code=400, detail="Файл превышает 80 KB")
-    content_type = file.content_type
-    if content_type not in ['image/png', 'image/webp', 'image/gif']:
+    if file.content_type not in ['image/png', 'image/webp', 'image/gif']:
         raise HTTPException(status_code=400, detail="Разрешены только PNG, WebP, GIF")
 
     # 3. Читаем содержимое файла (ОДИН РАЗ!)
     contents = await file.read()
 
-    # 4. Проверка размеров и соотношения сторон через Pillow
+    # 4. Проверка размеров через Pillow
     try:
+        from PIL import Image
+        import io
         img = Image.open(io.BytesIO(contents))
         width, height = img.size
         if width != height:
@@ -400,14 +401,14 @@ async def upload_avatar(
         if width > 512:
             raise HTTPException(status_code=400, detail="Максимальный размер 512×512 пикселей")
     except Exception as e:
-        raise HTTPException(status_code=400, detail="Не удалось прочитать изображение: " + str(e))
+        raise HTTPException(status_code=400, detail=f"Не удалось прочитать изображение: {e}")
 
     # 5. Генерация пути
     ext = file.filename.split('.')[-1].lower()
     file_name = f"{user_id}_{uuid.uuid4()}.{ext}"
     file_path = f"pending/{file_name}"
 
-    # 6. Загрузка в Supabase Storage
+    # 6. Загрузка в Storage
     try:
         res = supabase.storage.from_("avatars").upload(file_path, contents)
         if hasattr(res, 'error') and res.error:
