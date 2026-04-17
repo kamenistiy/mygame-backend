@@ -362,6 +362,7 @@ def list_players():
     cur.close()
     conn.close()
     return {"total": total, "players": players}
+
 @app.post("/avatar/upload")
 async def upload_avatar(
     user_id: str = Form(...),
@@ -384,7 +385,11 @@ async def upload_avatar(
     content_type = file.content_type
     if content_type not in ['image/png', 'image/webp', 'image/gif']:
         raise HTTPException(status_code=400, detail="Разрешены только PNG, WebP, GIF")
-    # 2b. Проверка размеров и соотношения сторон
+
+    # 3. Читаем содержимое файла (ОДИН РАЗ!)
+    contents = await file.read()
+
+    # 4. Проверка размеров и соотношения сторон через Pillow
     try:
         img = Image.open(io.BytesIO(contents))
         width, height = img.size
@@ -392,22 +397,17 @@ async def upload_avatar(
             raise HTTPException(status_code=400, detail="Изображение должно быть квадратным (1:1)")
         if width < 150 or height < 150:
             raise HTTPException(status_code=400, detail="Минимальный размер 150×150 пикселей")
-        # Опционально: проверка на слишком большой размер (например, максимум 512)
         if width > 512:
             raise HTTPException(status_code=400, detail="Максимальный размер 512×512 пикселей")
     except Exception as e:
         raise HTTPException(status_code=400, detail="Не удалось прочитать изображение: " + str(e))
-    
-    # 3. Чтение и проверка размеров (опционально)
-    contents = await file.read()
-    # Здесь можно использовать PIL для проверки размеров, но пока пропустим
 
-    # 4. Генерация пути
+    # 5. Генерация пути
     ext = file.filename.split('.')[-1].lower()
     file_name = f"{user_id}_{uuid.uuid4()}.{ext}"
     file_path = f"pending/{file_name}"
 
-    # 5. Загрузка в Supabase Storage
+    # 6. Загрузка в Supabase Storage
     try:
         res = supabase.storage.from_("avatars").upload(file_path, contents)
         if hasattr(res, 'error') and res.error:
@@ -417,7 +417,7 @@ async def upload_avatar(
         conn.close()
         raise HTTPException(status_code=500, detail=f"Ошибка загрузки в хранилище: {e}")
 
-    # 6. Обновление заявки
+    # 7. Обновление заявки
     cur.execute("UPDATE avatar_requests SET storage_path = %s WHERE id = %s", (file_path, request_id))
     conn.commit()
     cur.close()
