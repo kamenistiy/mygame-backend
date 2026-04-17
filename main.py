@@ -1,10 +1,10 @@
 # main.py
 
-from fastapi import FastAPI, HTTPException, UploadFile, File, Form
+from fastapi import FastAPI, HTTPException, UploadFile, File, Form, Request
 from pydantic import BaseModel
 import psycopg2
 from psycopg2.extras import RealDictCursor
-from typing import Optional
+from typing import Optional, List
 import os
 import uuid
 from fastapi.middleware.cors import CORSMiddleware
@@ -49,7 +49,11 @@ class AddItemRequest(BaseModel):
 class UseItemRequest(BaseModel):
     item_id: str
     quantity: int = 1
-
+# ========== МОДЕЛь ответа на заявку о смене аватара ==========
+class AvatarReviewRequest(BaseModel):
+    request_id: str
+    action: str  # 'approve' или 'reject'
+    reason: Optional[str] = None
 # ========== ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ ==========
 def remove_item_from_inventory(user_id: str, item_id: str, quantity: int = 1) -> bool:
     conn = get_db()
@@ -72,7 +76,15 @@ def remove_item_from_inventory(user_id: str, item_id: str, quantity: int = 1) ->
     finally:
         cur.close()
         conn.close()
-
+# ========== Вспомогательная функция – проверка, является ли пользователь админом: ==========
+def is_admin(user_id: str) -> bool:
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute("SELECT is_admin FROM players WHERE id = %s", (user_id,))
+    row = cur.fetchone()
+    cur.close()
+    conn.close()
+    return row and row['is_admin'] == True
 # ========== ЭНДПОИНТЫ ==========
 @app.get("/inventory/{user_id}")
 def get_inventory(user_id: str):
@@ -157,6 +169,104 @@ def use_item(user_id: str, req: UseItemRequest):
     raise HTTPException(status_code=400, detail="Использование этого предмета ещё не реализовано")
 
 # --- Эндпоинты ---
+
+# Эндпоинт – получение списка заявок (только для админа):
+@app.get("/admin/avatar-requests")
+def get_avatar_requests(user_id: str):
+    if not is_admin(user_id):
+        raise HTTPException(status_code=403, detail="Доступ запрещён")
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute("""
+        SELECT ar.id, ar.user_id, p.username, ar.original_filename, ar.status, ar.created_at, ar.storage_path, ar.reason
+        FROM avatar_requests ar
+        JOIN players p ON ar.user_id = p.id
+        ORDER BY ar.created_at DESC
+    """)
+    requests = cur.fetchall()
+    cur.close()
+    conn.close()
+    return {"requests": requests}
+
+#   Эндпоинт – обработка заявки (одобрить/отклонить):
+@app.post("/admin/avatar-review")
+def review_avatar(req: AvatarReviewRequest, admin_user_id: str):
+    if not is_admin(admin_user_id):
+        raise HTTPException(status_code=403, detail="Доступ запрещён")
+    
+    conn = get_db()
+    cur = conn.cursor()
+    
+    # Получаем заявку
+    cur.execute("SELECT user_id, storage_path, status FROM avatar_requests WHERE id = %s", (req.request_id,))
+    request = cur.fetchone()
+    if not request:
+        raise HTTPException(status_code=404, detail="Заявка не найдена")
+    if request['status'] != 'pending':
+        raise HTTPException(status_code=400, detail="Заявка уже обработана")
+    
+    user_id = request['user_id']
+    storage_path = request['storage_path']
+    
+    if req.action == 'approve':
+        # 1. Перемещаем файл из pending в approved
+        if storage_path:
+            new_path = storage_path.replace('pending/', 'approved/')
+            try:
+                # Копируем файл (move не работает напрямую, используем copy + delete)
+                file_data = supabase.storage.from_("avatars").download(storage_path)
+                supabase.storage.from_("avatars").upload(new_path, file_data)
+                supabase.storage.from_("avatars").remove([storage_path])
+            except Exception as e:
+                raise HTTPException(status_code=500, detail=f"Ошибка перемещения файла: {e}")
+        else:
+            new_path = None
+        
+        # 2. Добавляем запись в библиотеку аватаров
+        cur.execute("""
+            INSERT INTO user_avatars (user_id, storage_path, is_active)
+            VALUES (%s, %s, %s)
+            RETURNING id
+        """, (user_id, new_path, False))
+        avatar_id = cur.fetchone()['id']
+        
+        # 3. Обновляем статус заявки
+        cur.execute("""
+            UPDATE avatar_requests
+            SET status = 'approved', reviewed_at = NOW()
+            WHERE id = %s
+        """, (req.request_id,))
+        
+    elif req.action == 'reject':
+        # 1. Удаляем файл из Storage (если есть)
+        if storage_path:
+            try:
+                supabase.storage.from_("avatars").remove([storage_path])
+            except:
+                pass
+        
+        # 2. Обновляем статус заявки с причиной отказа
+        cur.execute("""
+            UPDATE avatar_requests
+            SET status = 'rejected', reason = %s, reviewed_at = NOW()
+            WHERE id = %s
+        """, (req.reason, req.request_id))
+        
+        # 3. Возвращаем фолиант в инвентарь
+        cur.execute("""
+            INSERT INTO inventory (user_id, item_id, quantity)
+            VALUES (%s, 'avatar_certificate', 1)
+            ON CONFLICT (user_id, item_id)
+            DO UPDATE SET quantity = inventory.quantity + 1
+        """, (user_id,))
+    
+    else:
+        raise HTTPException(status_code=400, detail="Неверное действие")
+    
+    conn.commit()
+    cur.close()
+    conn.close()
+    return {"success": True}
 
 @app.get("/")
 def root():
