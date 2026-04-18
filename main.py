@@ -355,6 +355,47 @@ def update_player(user_id: str, update: PlayerUpdate):
     conn.close()
     return updated
 
+# Библиотека аватаров, редактирование профиля.
+@app.get("/user-avatars/{user_id}")
+def get_user_avatars(user_id: str):
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute("""
+        SELECT id, storage_path, is_active FROM user_avatars
+        WHERE user_id = %s
+        ORDER BY created_at DESC
+    """, (user_id,))
+    rows = cur.fetchall()
+    cur.close()
+    conn.close()
+    avatars = []
+    for row in rows:
+        url = supabase.storage.from_("avatars").get_public_url(row['storage_path']) if row['storage_path'] else None
+        avatars.append({
+            "id": row['id'],
+            "url": url,
+            "is_active": row['is_active']
+        })
+    return {"avatars": avatars}
+
+@app.post("/profile/update")
+def update_profile(req: dict):
+    user_id = req.get('user_id')
+    motto = req.get('motto', '')
+    bio = req.get('bio', '')
+    avatar_id = req.get('avatar_id')
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute("UPDATE players SET motto = %s, bio = %s WHERE id = %s", (motto, bio, user_id))
+    if avatar_id:
+        # Сбросить активный флаг у всех аватаров пользователя
+        cur.execute("UPDATE user_avatars SET is_active = false WHERE user_id = %s", (user_id,))
+        cur.execute("UPDATE user_avatars SET is_active = true WHERE id = %s AND user_id = %s", (avatar_id, user_id))
+    conn.commit()
+    cur.close()
+    conn.close()
+    return {"success": True}
+
 # Админка: список всех игроков
 @app.get("/admin/players")
 def list_players():
