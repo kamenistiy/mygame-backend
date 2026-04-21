@@ -26,7 +26,7 @@ app.add_middleware(
 
 # --- Подключение к PostgreSQL (Supabase) ---
 # (используй ту же строку, что и раньше, с портом 5432 или 6543)
-DB_URL = "postgresql://postgres.onkpedemixygmtllrehp:6rQ7yNV2gjIsttit@db.onkpedemixygmtllrehp.supabase.co:5432/postgres?sslmode=require"
+DB_URL = "postgresql://postgres.onkpedemixygmtllrehp:6rQ7yNV2gjIsttit@aws-1-eu-central-1.pooler.supabase.com:5432/postgres"
 SUPABASE_URL = "https://onkpedemixygmtllrehp.supabase.co"
 SUPABASE_SERVICE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im9ua3BlZGVtaXh5Z210bGxyZWhwIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3MzA0NzYzOSwiZXhwIjoyMDg4NjIzNjM5fQ.LSUU4rwARPZNhCyeXYdsW4qeffD2UD524KYlFRNz9U8"  # НЕ anon key! Получи в настройках Supabase: Project Settings -> API -> service_role key (сохрани в секрете)
 supabase = create_client(SUPABASE_URL, SUPABASE_SERVICE_KEY)
