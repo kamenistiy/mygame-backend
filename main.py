@@ -33,6 +33,7 @@ DB_URL = os.environ.get("DB_URL")
 # Проверка, что переменные заданы (опционально, но полезно для отладки)
 if not SUPABASE_URL or not SUPABASE_SERVICE_KEY or not DB_URL:
     raise ValueError("Не заданы обязательные переменные окружения: SUPABASE_URL, SUPABASE_SERVICE_KEY, DB_URL")
+supabase = create_client(SUPABASE_URL, SUPABASE_SERVICE_KEY)
 def get_db():
     conn = psycopg2.connect(DB_URL, cursor_factory=RealDictCursor)
     return conn
@@ -474,6 +475,7 @@ async def upload_avatar(
     conn.close()
 
     return {"success": True}
+
    #Отображение Аватаров пользователей в их профиле
 @app.get("/user-avatar/{user_id}")
 def get_user_avatar(user_id: str):
