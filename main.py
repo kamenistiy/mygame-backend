@@ -12,21 +12,8 @@ from supabase import create_client
 from PIL import Image
 import io
 
-import time
-from psycopg2 import OperationalError
 
-def get_db():
-    max_retries = 5
-    for i in range(max_retries):
-        try:
-            conn = psycopg2.connect(DB_URL, cursor_factory=RealDictCursor)
-            return conn
-        except OperationalError as e:
-            if i == max_retries - 1:
-                raise
-            print(f"Ошибка подключения, попытка {i+1}...")
-            time.sleep(2 ** i)  # Экспоненциальная задержка
-            
+
 print("=== STARTING APP ===")
 
 app = FastAPI()
@@ -45,6 +32,22 @@ SUPABASE_URL = os.environ.get("SUPABASE_URL")
 SUPABASE_SERVICE_KEY = os.environ.get("SUPABASE_SERVICE_KEY")
 DB_URL = os.environ.get("DB_URL")
 
+import time
+import logging
+from psycopg2 import OperationalError
+
+def get_db():
+    max_retries = 3
+    for i in range(max_retries):
+        try:
+            conn = psycopg2.connect(DB_URL, cursor_factory=RealDictCursor)
+            return conn
+        except OperationalError as e:
+            logging.error(f"Попытка {i+1} подключения к БД не удалась: {e}")
+            if i == max_retries - 1:
+                raise
+            time.sleep(2 ** i)
+            
 # Проверка, что переменные заданы (опционально, но полезно для отладки)
 if not SUPABASE_URL or not SUPABASE_SERVICE_KEY or not DB_URL:
     raise ValueError("Не заданы обязательные переменные окружения: SUPABASE_URL, SUPABASE_SERVICE_KEY, DB_URL")
