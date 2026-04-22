@@ -12,6 +12,21 @@ from supabase import create_client
 from PIL import Image
 import io
 
+import time
+from psycopg2 import OperationalError
+
+def get_db():
+    max_retries = 5
+    for i in range(max_retries):
+        try:
+            conn = psycopg2.connect(DB_URL, cursor_factory=RealDictCursor)
+            return conn
+        except OperationalError as e:
+            if i == max_retries - 1:
+                raise
+            print(f"Ошибка подключения, попытка {i+1}...")
+            time.sleep(2 ** i)  # Экспоненциальная задержка
+            
 print("=== STARTING APP ===")
 
 app = FastAPI()
