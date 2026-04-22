@@ -60,6 +60,34 @@ def get_db():
     conn = psycopg2.connect(DB_URL, cursor_factory=RealDictCursor)
     return conn
 
+# ========== ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ  ==========
+def add_default_avatars_for_user(user_id: str):
+    """Добавляет стандартные аватары пользователю"""
+    with get_db() as conn:
+        with conn.cursor() as cur:
+            avatars = ['default_avatars/E.png', 'default_avatars/F.png', 'default_avatars/G.png',
+                       'default_avatars/H.png', 'default_avatars/I.png', 'default_avatars/K.png',
+                       'default_avatars/M.png', 'default_avatars/S.png', 'default_avatars/V.png',
+                       'default_avatars/X.png']
+            for path in avatars:
+                cur.execute("""
+                    INSERT INTO user_avatars (user_id, storage_path, is_active)
+                    VALUES (%s, %s, false)
+                    ON CONFLICT (user_id, storage_path) DO NOTHING
+                """, (user_id, path))
+            conn.commit()
+
+def add_achievement_for_user(user_id: str, achievement_id: str):
+    """Добавляет достижение пользователю"""
+    with get_db() as conn:
+        with conn.cursor() as cur:
+            cur.execute("""
+                INSERT INTO user_achievements (user_id, achievement_id, current_progress, is_unlocked, unlocked_at)
+                VALUES (%s, %s, 1, true, NOW())
+                ON CONFLICT (user_id, achievement_id) DO NOTHING
+            """, (user_id, achievement_id))
+            conn.commit()
+
 # --- Модели данных ---
 class PlayerUpdate(BaseModel):
     exp: Optional[int] = None
@@ -332,17 +360,34 @@ def required_exp(level: int) -> int:
     else:
         return 20 * (2 ** (level - 1))
 
-@app.put("/player/{user_id}")
-def update_player(user_id: str, update: PlayerUpdate):
-    conn = get_db()
-    cur = conn.cursor()
-    # Проверяем существование игрока
-    cur.execute("SELECT * FROM players WHERE id = %s", (user_id,))
-    player = cur.fetchone()
-    if not player:
-        cur.close()
-        conn.close()
-        raise HTTPException(status_code=404, detail="Player not found")
+@app.get("/player/{user_id}")
+def get_player(user_id: str):
+    with get_db() as conn:
+        with conn.cursor() as cur:
+            # Проверяем, существует ли игрок
+            cur.execute("SELECT * FROM players WHERE id = %s", (user_id,))
+            player = cur.fetchone()
+            if player:
+                return player
+            else:
+                # Создаём нового игрока
+                # Получаем username из auth.users (через Supabase Admin API или делаем заглушку)
+                # Для простоты используем временное имя, но лучше запросить из auth.users
+                username = "Player_" + user_id[:8]  # временное имя
+                cur.execute("""
+                    INSERT INTO players (id, username, level, exp, gold, created_at)
+                    VALUES (%s, %s, 1, 0, 0, NOW())
+                    RETURNING *
+                """, (user_id, username))
+                player = cur.fetchone()
+                conn.commit()
+                
+                # Добавляем стандартные аватары (если триггер не сработал)
+                add_default_avatars_for_user(user_id)
+                # Добавляем достижение "Благодарность"
+                add_achievement_for_user(user_id, 'alpha_tester')
+                
+                return player
 
     # Текущие значения
     current_exp = player["exp"]
