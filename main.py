@@ -24,12 +24,15 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# --- Подключение к PostgreSQL (Supabase) ---
-# (используй ту же строку, что и раньше, с портом 5432 или 6543)
-DB_URL = "postgresql://postgres.onkpedemixygmtllrehp:6rQ7yNV2gjIsttit@aws-1-eu-central-1.pooler.supabase.com:5432/postgres"
-SUPABASE_URL = "https://onkpedemixygmtllrehp.supabase.co"
-SUPABASE_SERVICE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im9ua3BlZGVtaXh5Z210bGxyZWhwIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3MzA0NzYzOSwiZXhwIjoyMDg4NjIzNjM5fQ.LSUU4rwARPZNhCyeXYdsW4qeffD2UD524KYlFRNz9U8"  # НЕ anon key! Получи в настройках Supabase: Project Settings -> API -> service_role key (сохрани в секрете)
-supabase = create_client(SUPABASE_URL, SUPABASE_SERVICE_KEY)
+import os
+
+SUPABASE_URL = os.environ.get("SUPABASE_URL")
+SUPABASE_SERVICE_KEY = os.environ.get("SUPABASE_SERVICE_KEY")
+DB_URL = os.environ.get("DB_URL")
+
+# Проверка, что переменные заданы (опционально, но полезно для отладки)
+if not SUPABASE_URL or not SUPABASE_SERVICE_KEY or not DB_URL:
+    raise ValueError("Не заданы обязательные переменные окружения: SUPABASE_URL, SUPABASE_SERVICE_KEY, DB_URL")
 def get_db():
     conn = psycopg2.connect(DB_URL, cursor_factory=RealDictCursor)
     return conn
@@ -435,7 +438,7 @@ async def upload_avatar(
     contents = await file.read()
     original_filename = file.filename
 
-    # 4. Проверка размеров через Pillow
+        # 4. Проверка размеров через Pillow
     try:
         from PIL import Image
         import io
@@ -443,10 +446,8 @@ async def upload_avatar(
         width, height = img.size
         if width != height:
             raise HTTPException(status_code=400, detail="Изображение должно быть квадратным (1:1)")
-        if width < 150 or height < 150:
-            raise HTTPException(status_code=400, detail="Минимальный размер 150×150 пикселей")
-        if width > 512:
-            raise HTTPException(status_code=400, detail="Максимальный размер 512×512 пикселей")
+        if width != 150 or height != 150:
+            raise HTTPException(status_code=400, detail="Аватар должен быть строго 150×150 пикселей")
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"Не удалось прочитать изображение: {e}")
 
