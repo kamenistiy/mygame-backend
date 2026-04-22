@@ -37,16 +37,16 @@ import logging
 from psycopg2 import OperationalError
 
 def get_db():
-    max_retries = 3
+    max_retries = 5
     for i in range(max_retries):
         try:
             conn = psycopg2.connect(DB_URL, cursor_factory=RealDictCursor)
             return conn
         except OperationalError as e:
-            logging.error(f"Попытка {i+1} подключения к БД не удалась: {e}")
             if i == max_retries - 1:
                 raise
-            time.sleep(2 ** i)
+            print(f"Попытка {i+1} не удалась: {e}")
+            time.sleep(2 ** i)  # Задержка 1, 2, 4, 8, 16 секунд
 
 # Проверка, что переменные заданы (опционально, но полезно для отладки)
 if not SUPABASE_URL or not SUPABASE_SERVICE_KEY or not DB_URL:
@@ -310,17 +310,16 @@ def test():
 # Получить данные игрока по UUID
 @app.get("/player/{user_id}")
 def get_player(user_id: str):
-    conn = get_db()
-    cur = conn.cursor()
-    print(f"Получен запрос для user_id: {user_id}")
-    cur.execute("SELECT * FROM players WHERE id = %s", (user_id,))
-    player = cur.fetchone()
-    cur.close()
-    conn.close()
-    if player:
-        return player
-    else:
-        raise HTTPException(status_code=404, detail="Player not found")
+    with get_db() as conn:
+        with conn.cursor() as cur:
+            print(f"Получен запрос для user_id: {user_id}")
+            cur.execute("SELECT * FROM players WHERE id = %s", (user_id,))
+            player = cur.fetchone()
+            if player:
+                return player
+            else:
+                raise HTTPException(status_code=404, detail="Player not found")
+    # Соединение и курсор закроются автоматически
 
 # Обновить данные игрока
 def required_exp(level: int) -> int:
