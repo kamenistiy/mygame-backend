@@ -494,6 +494,24 @@ def get_user_avatar(user_id: str):
         return {"avatar_url": public_url}
     else:
         return {"avatar_url": None}
+    
+    
+@app.get("/my-avatar-requests")
+def get_my_requests(user_id: str):
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute("""
+        SELECT id, original_filename, status, reason, created_at
+        FROM avatar_requests
+        WHERE user_id = %s
+        ORDER BY created_at DESC
+    """, (user_id,))
+    requests = cur.fetchall()
+    cur.close()
+    conn.close()
+    return {"requests": requests}
+
+
 print("=== ALL ROUTES REGISTERED ===")
 
 
