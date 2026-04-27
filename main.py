@@ -352,16 +352,22 @@ def required_exp(level: int) -> int:
 def get_player(user_id: str):
     with get_db() as conn:
         with conn.cursor() as cur:
-            # Проверяем, существует ли игрок
             cur.execute("SELECT * FROM players WHERE id = %s", (user_id,))
             player = cur.fetchone()
             if player:
                 return player
             else:
-                # Создаём нового игрока
-                # Получаем username из auth.users (через Supabase Admin API или делаем заглушку)
-                # Для простоты используем временное имя, но лучше запросить из auth.users
-                username = "Player_" + user_id[:8]  # временное имя
+                # 1. Пытаемся получить username из auth.users
+                try:
+                    # Используем Admin API – требует service_role ключ
+                    user_data = supabase.auth.admin.get_user_by_id(user_id)
+                    username = user_data.user.user_metadata.get('username', 'Player')
+                except Exception as e:
+                    print(f"Ошибка получения username из Auth: {e}")
+                    # Если не получилось – генерируем временное имя (или можно оставить заглушку)
+                    username = "Player_" + user_id[:8]
+
+                # 2. Создаём запись в таблице players
                 cur.execute("""
                     INSERT INTO players (id, username, level, exp, gold, created_at)
                     VALUES (%s, %s, 1, 0, 0, NOW())
@@ -369,14 +375,12 @@ def get_player(user_id: str):
                 """, (user_id, username))
                 player = cur.fetchone()
                 conn.commit()
-                
-                # Добавляем стандартные аватары (если триггер не сработал)
-                add_default_avatars_for_user(user_id)
-                # Добавляем достижение "Благодарность"
-                add_achievement_for_user(user_id, 'alpha_tester')
-                
-                return player
 
+                # 3. Добавляем стандартные аватары и достижение
+                add_default_avatars_for_user(user_id)
+                add_achievement_for_user(user_id, 'alpha_tester')
+
+                return player
     # Текущие значения
     current_exp = player["exp"]
     current_gold = player["gold"]
