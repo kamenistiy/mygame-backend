@@ -339,18 +339,6 @@ def ping():
 def test():
     return {"test": "ok"}
 
-# Получить данные игрока по UUID
-@app.get("/player/{user_id}")
-def get_player(user_id: str):
-    with get_db() as conn:
-        with conn.cursor() as cur:
-            cur.execute("SELECT * FROM players WHERE id = %s", (user_id,))
-            player = cur.fetchone()
-            if player:
-                return player
-            else:
-                raise HTTPException(status_code=404, detail="Player not found")
-    # соединение закрыто автоматически
 
 # Обновить данные игрока
 def required_exp(level: int) -> int:
@@ -423,6 +411,44 @@ def get_player(user_id: str):
     cur.close()
     conn.close()
     return updated
+
+@app.post("/player/{user_id}")
+def update_player(user_id: str, update: PlayerUpdate):
+    with get_db() as conn:
+        with conn.cursor() as cur:
+            # Проверяем существование игрока
+            cur.execute("SELECT * FROM players WHERE id = %s", (user_id,))
+            player = cur.fetchone()
+            if not player:
+                raise HTTPException(status_code=404, detail="Player not found")
+
+            # Текущие значения
+            current_exp = player["exp"]
+            current_gold = player["gold"]
+            current_level = player["level"]
+
+            # Новое золото
+            new_gold = current_gold if update.gold is None else update.gold
+
+            # Обработка опыта (с повышением уровня)
+            new_level = current_level
+            new_exp = current_exp
+            if update.exp is not None:
+                exp_to_add = update.exp
+                temp_exp = current_exp + exp_to_add
+                while temp_exp >= required_exp(new_level):
+                    temp_exp -= required_exp(new_level)
+                    new_level += 1
+                new_exp = temp_exp
+
+            # Обновление в БД
+            cur.execute(
+                "UPDATE players SET exp = %s, gold = %s, level = %s WHERE id = %s RETURNING *",
+                (new_exp, new_gold, new_level, user_id)
+            )
+            updated = cur.fetchone()
+            conn.commit()
+            return updated
 
 # Библиотека аватаров, редактирование профиля.
 @app.get("/user-avatars/{user_id}")
