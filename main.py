@@ -383,7 +383,7 @@ def get_player(user_id: str):
                 add_notification(user_id, 'system', 'Добро пожаловать!', 
                     f'Привет, {username}! Рады видеть тебя в Fastened World. Найди друзей, осваивай мир и получай удовольствие от игры!')
                 add_notification(user_id, 'system', 'Стартовые Образы', 
-                    'Вы получили 10 стартовых аватаров (E, F, G, H, I, K, M, S, V, X).')
+                    'Вы получили 10 стартовых Образов! Применить их можно во вкладке "Профиль", нажав на значок шестерни.')
                 add_notification(user_id, 'achievement', 'Благодарность', 
                     'Вы получили достижение "Благодарность" за участие в альфа-тесте.')
                 
@@ -717,9 +717,9 @@ def add_notification(user_id: str, notif_type: str, title: str, message: str):
     with get_db() as conn:
         with conn.cursor() as cur:
             cur.execute("""
-                INSERT INTO notifications (user_id, type, title, message, expires_at)
-                VALUES (%s, %s, %s, %s, NOW() + INTERVAL '1 year')
-            """, (user_id, notif_type, title, message))
+    INSERT INTO notifications (user_id, type, title, message, expires_at, is_read)
+    VALUES (%s, %s, %s, %s, NOW() + INTERVAL '1 year', false)
+""", (user_id, notif_type, title, message))
             conn.commit()
             
 @app.get("/notifications/unread/count")
