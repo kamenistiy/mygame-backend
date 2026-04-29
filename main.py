@@ -252,7 +252,7 @@ def review_avatar(req: AvatarReviewRequest):
     conn = get_db()
     cur = conn.cursor()
     cur.execute("SET statement_timeout = 0")
-    
+
     # Получаем заявку
     cur.execute("SELECT user_id, storage_path, status, original_filename FROM avatar_requests WHERE id = %s", (req.request_id,))
     request = cur.fetchone()
@@ -719,6 +719,7 @@ def grant_achievement_if_not_obtained(user_id: str, achievement_id: str):
     """Выдаёт достижение игроку, если оно ещё не получено, и начисляет награду + уведомление."""
     with get_db() as conn:
         with conn.cursor() as cur:
+            cur.execute("SET statement_timeout = 0")
             # Проверяем, есть ли уже и получено ли
             cur.execute("SELECT is_unlocked FROM user_achievements WHERE user_id = %s AND achievement_id = %s", (user_id, achievement_id))
             row = cur.fetchone()
