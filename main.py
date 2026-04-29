@@ -263,18 +263,8 @@ def review_avatar(req: AvatarReviewRequest, admin_user_id: str):
     storage_path = request['storage_path']
     
     if req.action == 'approve':
-        # 1. Перемещаем файл из pending в approved
-        if storage_path:
-            new_path = storage_path.replace('pending/', 'approved/')
-            try:
-                # Копируем файл (move не работает напрямую, используем copy + delete)
-                file_data = supabase.storage.from_("avatars").download(storage_path)
-                supabase.storage.from_("avatars").upload(new_path, file_data)
-                supabase.storage.from_("avatars").remove([storage_path])
-            except Exception as e:
-                raise HTTPException(status_code=500, detail=f"Ошибка перемещения файла: {e}")
-        else:
-            new_path = None
+        print(f"Одобрение заявки {req.request_id}, storage_path = {storage_path}")
+        new_path = storage_path
         
         # 2. Добавляем запись в библиотеку аватаров
         cur.execute("""
