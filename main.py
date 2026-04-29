@@ -252,7 +252,7 @@ def review_avatar(req: AvatarReviewRequest, admin_user_id: str):
     cur = conn.cursor()
     
     # Получаем заявку
-    cur.execute("SELECT user_id, storage_path, status FROM avatar_requests WHERE id = %s", (req.request_id,))
+    cur.execute("SELECT user_id, storage_path, status, original_filename FROM avatar_requests WHERE id = %s", (req.request_id,))
     request = cur.fetchone()
     if not request:
         raise HTTPException(status_code=404, detail="Заявка не найдена")
@@ -295,6 +295,20 @@ def review_avatar(req: AvatarReviewRequest, admin_user_id: str):
             SET status = 'approved', reviewed_at = NOW()
             WHERE id = %s
         """, (req.request_id,))
+          # Увеличиваем счётчик одобренных аватаров пользователя
+        cur.execute("UPDATE players SET approved_avatars_count = approved_avatars_count + 1 WHERE id = %s RETURNING approved_avatars_count", (user_id,))
+        new_count = cur.fetchone()['approved_avatars_count']
+
+            # Выдаём достижения (проверяем пороги)
+        grant_achievement_if_not_obtained(user_id, 'avatar_lover')
+        if new_count >= 5:
+                grant_achievement_if_not_obtained(user_id, 'avatar_lover_5')
+        if new_count >= 10:
+                grant_achievement_if_not_obtained(user_id, 'avatar_lover_10')
+
+            # Отправляем уведомление об одобрении (используем original_filename из request)
+        add_notification(user_id, 'system', 'Аватар одобрен',
+                             f'Ваша заявка на файл "{request["original_filename"]}" одобрена. Аватар добавлен в библиотеку профиля.')
         
     elif req.action == 'reject':
         # 1. Удаляем файл из Storage (если есть)
@@ -382,8 +396,8 @@ def get_player(user_id: str):
 
                 add_notification(user_id, 'system', 'Добро пожаловать!', 
                     f'Привет, {username}! Рады видеть тебя в Fastened World. Найди друзей, осваивай мир и получай удовольствие от игры!')
-                add_notification(user_id, 'system', 'Стартовые Образы', 
-                    'Вы получили 10 стартовых Образов! Применить их можно во вкладке "Профиль", нажав на значок шестерни.')
+                add_notification(user_id, 'system', 'Стартовые Аватары', 
+                    'Вы получили 10 стартовых Аватаров! Применить их можно во вкладке "Профиль", нажав на значок шестерни.')
                 add_notification(user_id, 'achievement', 'Благодарность', 
                     'Вы получили достижение "Благодарность" за участие в альфа-тесте.')
                 
@@ -740,6 +754,37 @@ def mark_notifications_read(user_id: str, notification_ids: List[str] = None):
                 cur.execute("UPDATE notifications SET is_read = true WHERE user_id = %s AND expires_at > NOW()", (user_id,))
             conn.commit()
             return {"success": True}
+        
+#Достижение с аватарами 1,5,10   
+def grant_achievement_if_not_obtained(user_id: str, achievement_id: str):
+    """Выдаёт достижение игроку, если оно ещё не получено, и начисляет награду."""
+    with get_db() as conn:
+        with conn.cursor() as cur:
+            # Проверяем, есть ли уже и получено ли
+            cur.execute("SELECT is_unlocked FROM user_achievements WHERE user_id = %s AND achievement_id = %s", (user_id, achievement_id))
+            row = cur.fetchone()
+            if row and row['is_unlocked']:
+                return False  # уже есть
+
+            # Получаем награды
+            cur.execute("SELECT exp_reward, gold_reward FROM achievements WHERE id = %s", (achievement_id,))
+            reward = cur.fetchone()
+            if not reward:
+                return False
+
+            # Вставляем или обновляем
+            cur.execute("""
+                INSERT INTO user_achievements (user_id, achievement_id, current_progress, is_unlocked, unlocked_at)
+                VALUES (%s, %s, 1, true, NOW())
+                ON CONFLICT (user_id, achievement_id) DO UPDATE
+                SET is_unlocked = true, unlocked_at = NOW()
+            """, (user_id, achievement_id))
+
+            # Начисляем опыт и золото
+            cur.execute("UPDATE players SET exp = exp + %s, gold = gold + %s WHERE id = %s",
+                        (reward['exp_reward'], reward['gold_reward'], user_id))
+            conn.commit()
+            return True
         
 
 print("=== ALL ROUTES REGISTERED ===")
