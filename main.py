@@ -106,8 +106,9 @@ class UseItemRequest(BaseModel):
 # ========== МОДЕЛь ответа на заявку о смене аватара ==========
 class AvatarReviewRequest(BaseModel):
     request_id: str
-    action: str  # 'approve' или 'reject'
+    action: str
     reason: Optional[str] = None
+    admin_user_id: str    
 # ========== ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ ==========
 def remove_item_from_inventory(user_id: str, item_id: str, quantity: int = 1) -> bool:
     conn = get_db()
@@ -244,8 +245,8 @@ def get_avatar_requests(user_id: str):
 
 #   Эндпоинт – обработка заявки (одобрить/отклонить):
 @app.post("/admin/avatar-review")
-def review_avatar(req: AvatarReviewRequest, admin_user_id: str):
-    if not is_admin(admin_user_id):
+def review_avatar(req: AvatarReviewRequest):
+    if not is_admin(req.admin_user_id):
         raise HTTPException(status_code=403, detail="Доступ запрещён")
     
     conn = get_db()
