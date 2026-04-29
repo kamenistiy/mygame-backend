@@ -251,6 +251,7 @@ def review_avatar(req: AvatarReviewRequest):
     
     conn = get_db()
     cur = conn.cursor()
+    cur.execute("SET statement_timeout = 0")
     
     # Получаем заявку
     cur.execute("SELECT user_id, storage_path, status, original_filename FROM avatar_requests WHERE id = %s", (req.request_id,))
