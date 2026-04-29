@@ -747,7 +747,7 @@ def mark_notifications_read(user_id: str, notification_ids: List[str] = None):
         
 #Достижение с аватарами 1,5,10   
 def grant_achievement_if_not_obtained(user_id: str, achievement_id: str):
-    """Выдаёт достижение игроку, если оно ещё не получено, и начисляет награду."""
+    """Выдаёт достижение игроку, если оно ещё не получено, и начисляет награду + уведомление."""
     with get_db() as conn:
         with conn.cursor() as cur:
             # Проверяем, есть ли уже и получено ли
@@ -756,13 +756,13 @@ def grant_achievement_if_not_obtained(user_id: str, achievement_id: str):
             if row and row['is_unlocked']:
                 return False  # уже есть
 
-            # Получаем награды
-            cur.execute("SELECT exp_reward, gold_reward FROM achievements WHERE id = %s", (achievement_id,))
+            # Получаем награды и название достижения
+            cur.execute("SELECT name, exp_reward, gold_reward FROM achievements WHERE id = %s", (achievement_id,))
             reward = cur.fetchone()
             if not reward:
                 return False
 
-            # Вставляем или обновляем
+            # Вставляем или обновляем достижение
             cur.execute("""
                 INSERT INTO user_achievements (user_id, achievement_id, current_progress, is_unlocked, unlocked_at)
                 VALUES (%s, %s, 1, true, NOW())
@@ -773,6 +773,11 @@ def grant_achievement_if_not_obtained(user_id: str, achievement_id: str):
             # Начисляем опыт и золото
             cur.execute("UPDATE players SET exp = exp + %s, gold = gold + %s WHERE id = %s",
                         (reward['exp_reward'], reward['gold_reward'], user_id))
+
+            # Отправляем уведомление о получении достижения
+            add_notification(user_id, 'achievement', f'Достижение "{reward["name"]}" получено!',
+                             f'Награда: +{reward["exp_reward"]} опыта, +{reward["gold_reward"]} золота.')
+
             conn.commit()
             return True
         
