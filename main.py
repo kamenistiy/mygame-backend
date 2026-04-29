@@ -393,40 +393,7 @@ def get_player(user_id: str):
                     'Вы получили достижение "Благодарность" за участие в альфа-тесте.')
                 
                 return player
-    # Текущие значения
-    current_exp = player["exp"]
-    current_gold = player["gold"]
-    current_level = player["level"]
-
-    # Определяем новое золото (если передано)
-    new_gold = current_gold if update.gold is None else update.gold
-
-    # Определяем новый уровень и опыт
-    new_level = current_level
-    new_exp = current_exp
-
-    # Если передан опыт, добавляем его и пересчитываем уровень
-    if update.exp is not None:
-        exp_to_add = update.exp
-        temp_exp = current_exp + exp_to_add
-        print(f"🔹 Before: level={current_level}, exp={current_exp}, add={exp_to_add}, temp={temp_exp}")
-        while temp_exp >= required_exp(new_level):
-            print(f"   Level up: {new_level} -> {new_level+1}, need={required_exp(new_level)}, temp={temp_exp}")
-            temp_exp -= required_exp(new_level)
-            new_level += 1
-        new_exp = temp_exp
-        print(f"🔹 After: level={new_level}, exp={new_exp}")
-
-    # Обновляем запись
-    cur.execute(
-        "UPDATE players SET exp = %s, gold = %s, level = %s WHERE id = %s RETURNING *",
-        (new_exp, new_gold, new_level, user_id)
-    )
-    updated = cur.fetchone()
-    conn.commit()
-    cur.close()
-    conn.close()
-    return updated
+   
 
 @app.post("/player/{user_id}")
 def update_player(user_id: str, update: PlayerUpdate):
