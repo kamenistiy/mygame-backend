@@ -292,10 +292,10 @@ def review_avatar(req: AvatarReviewRequest, admin_user_id: str):
         print("DEBUG: before achievements")
             # Выдаём достижения (проверяем пороги)
         grant_achievement_if_not_obtained(user_id, 'avatar_lover')
-        #if new_count >= 5:
-              #  grant_achievement_if_not_obtained(user_id, 'avatar_lover_5')
-       # if new_count >= 10:
-         #       grant_achievement_if_not_obtained(user_id, 'avatar_lover_10')
+        if new_count >= 5:
+               grant_achievement_if_not_obtained(user_id, 'avatar_lover_5')
+        if new_count >= 10:
+               grant_achievement_if_not_obtained(user_id, 'avatar_lover_10')
 
         #Отправляем уведомление об одобрении (используем original_filename из request)
         add_notification(user_id, 'system', 'Аватар одобрен',
@@ -715,38 +715,33 @@ def mark_notifications_read(user_id: str, notification_ids: List[str] = None):
         
 #Достижение с аватарами 1,5,10   
 def grant_achievement_if_not_obtained(user_id: str, achievement_id: str):
-    """Выдаёт достижение игроку, если оно ещё не получено, и начисляет награду + уведомление."""
+    """Выдаёт достижение игроку (без сложных проверок)."""
     with get_db() as conn:
         with conn.cursor() as cur:
+            # Отключаем таймаут
             cur.execute("SET statement_timeout = 0")
-            # Проверяем, есть ли уже и получено ли
-            cur.execute("SELECT is_unlocked FROM user_achievements WHERE user_id = %s AND achievement_id = %s", (user_id, achievement_id))
-            row = cur.fetchone()
-            if row and row['is_unlocked']:
-                return False  # уже есть
-
-            # Получаем награды и название достижения
-            cur.execute("SELECT name, exp_reward, gold_reward FROM achievements WHERE id = %s", (achievement_id,))
+            
+            # Получаем награды
+            cur.execute("SELECT exp_reward, gold_reward FROM achievements WHERE id = %s", (achievement_id,))
             reward = cur.fetchone()
             if not reward:
                 return False
-
-            # Вставляем или обновляем достижение
-            cur.execute("""
-                INSERT INTO user_achievements (user_id, achievement_id, current_progress, is_unlocked, unlocked_at)
-                VALUES (%s, %s, 1, true, NOW())
-                ON CONFLICT (user_id, achievement_id) DO UPDATE
-                SET is_unlocked = true, unlocked_at = NOW()
-            """, (user_id, achievement_id))
-
-            # Начисляем опыт и золото
+            
+            # Пытаемся вставить достижение (если уже есть – получим ошибку, но проигнорируем)
+            try:
+                cur.execute("""
+                    INSERT INTO user_achievements (user_id, achievement_id, current_progress, is_unlocked, unlocked_at)
+                    VALUES (%s, %s, 1, true, NOW())
+                """, (user_id, achievement_id))
+            except Exception as e:
+                print(f"Достижение {achievement_id} уже есть у пользователя {user_id}: {e}")
+                conn.rollback()
+                return False
+            
+            # Начисляем награды
             cur.execute("UPDATE players SET exp = exp + %s, gold = gold + %s WHERE id = %s",
                         (reward['exp_reward'], reward['gold_reward'], user_id))
-
-            # Отправляем уведомление о получении достижения
-            add_notification(user_id, 'achievement', f'Достижение "{reward["name"]}" получено!',
-                             f'Награда: +{reward["exp_reward"]} опыта, +{reward["gold_reward"]} золота.')
-
+            
             conn.commit()
             return True
         
