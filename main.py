@@ -297,9 +297,9 @@ def review_avatar(req: AvatarReviewRequest, admin_user_id: str):
        # if new_count >= 10:
          #       grant_achievement_if_not_obtained(user_id, 'avatar_lover_10')
 
-            # Отправляем уведомление об одобрении (используем original_filename из request)
-       # add_notification(user_id, 'system', 'Аватар одобрен',
-            #                 f'Ваша заявка на файл "{request["original_filename"]}" одобрена. Аватар добавлен в библиотеку профиля.')
+        #Отправляем уведомление об одобрении (используем original_filename из request)
+        add_notification(user_id, 'system', 'Аватар одобрен',
+          f'Ваша заявка на файл "{request["original_filename"]}" одобрена. Аватар добавлен в библиотеку профиля.')
         
     elif req.action == 'reject':
         # 1. Удаляем файл из Storage (если есть)
