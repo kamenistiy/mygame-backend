@@ -46,26 +46,35 @@ def required_exp(level: int) -> int:
 
 def recalculate_level(user_id: str, exp_add: int = 0) -> int:
     print(f"  🔁 recalculate_level: user={user_id}, exp_add={exp_add}")
-    with get_db() as conn:
-        with conn.cursor() as cur:
-            cur.execute("SELECT exp, level FROM players WHERE id = %s", (user_id,))
-            player = cur.fetchone()
-            if not player:
-                print("  ❌ Игрок не найден")
-                return 0
-            total_exp = player['exp'] + exp_add
-            current_level = player['level']
-            new_level = current_level
-            exp_rem = total_exp
-            while exp_rem >= required_exp(new_level):
-                exp_rem -= required_exp(new_level)
-                new_level += 1
-            cur.execute("UPDATE players SET exp = %s, level = %s WHERE id = %s",
-                        (exp_rem, new_level, user_id))
-            conn.commit()
-            if new_level != current_level:
-                print(f"  Level up: {current_level} -> {new_level}")
-            return new_level
+    try:
+        print("  🔁 Попытка получить соединение...")
+        with get_db() as conn:
+            print("  🔁 Соединение получено")
+            with conn.cursor() as cur:
+                print("  🔁 Курсор получен")
+                cur.execute("SET statement_timeout = 0")
+                print("  🔁 Таймаут сброшен")
+                cur.execute("SELECT exp, level FROM players WHERE id = %s", (user_id,))
+                player = cur.fetchone()
+                if not player:
+                    print("  ❌ Игрок не найден")
+                    return 0
+                total_exp = player['exp'] + exp_add
+                current_level = player['level']
+                new_level = current_level
+                exp_rem = total_exp
+                while exp_rem >= required_exp(new_level):
+                    exp_rem -= required_exp(new_level)
+                    new_level += 1
+                cur.execute("UPDATE players SET exp = %s, level = %s WHERE id = %s",
+                            (exp_rem, new_level, user_id))
+                conn.commit()
+                if new_level != current_level:
+                    print(f"  Level up: {current_level} -> {new_level}")
+                return new_level
+    except Exception as e:
+        print(f"  ❌ Ошибка в recalculate_level: {e}")
+        return 0
 
 def get_db():
     max_retries = 3
