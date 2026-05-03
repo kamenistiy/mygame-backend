@@ -44,24 +44,38 @@ def required_exp(level: int) -> int:
     else:
         return 20 * (2 ** (level - 1))
 
-def recalculate_level(user_id: str) -> int:
-    """Пересчитывает уровень игрока на основе текущего опыта, обновляет БД и возвращает новый уровень."""
+def recalculate_level(user_id: str, exp_add: int = 0) -> int:
+    """
+    Добавляет опыт (exp_add) к общему накопленному опыту игрока,
+    пересчитывает уровень и обновляет exp как остаток внутри уровня.
+    Возвращает новый уровень.
+    """
     with get_db() as conn:
         with conn.cursor() as cur:
+            # Читаем текущий общий опыт и уровень
             cur.execute("SELECT exp, level FROM players WHERE id = %s", (user_id,))
             player = cur.fetchone()
             if not player:
                 return 0
-            exp = player['exp']
-            level = player['level']
-            new_level = level
-            while exp >= required_exp(new_level):
-                exp -= required_exp(new_level)
+            total_exp = player['exp']
+            current_level = player['level']
+            # Добавляем новый опыт к общему
+            total_exp += exp_add
+            
+            # Пересчитываем уровень и остаток
+            new_level = current_level
+            exp_rem = total_exp
+            # Пока остаток больше или равен требуемому для следующего уровня
+            while exp_rem >= required_exp(new_level):
+                exp_rem -= required_exp(new_level)
                 new_level += 1
-            if new_level != level:
-                cur.execute("UPDATE players SET level = %s WHERE id = %s", (new_level, user_id))
-                conn.commit()
-                print(f"Level up: {level} -> {new_level} for {user_id}")
+            
+            # Обновляем БД: exp = остаток, level = новый уровень
+            cur.execute("UPDATE players SET exp = %s, level = %s WHERE id = %s",
+                        (exp_rem, new_level, user_id))
+            conn.commit()
+            if new_level != current_level:
+                print(f"Level up: {current_level} -> {new_level} for user {user_id}")
             return new_level
 
 def get_db():
@@ -84,9 +98,7 @@ def get_db():
 if not SUPABASE_URL or not SUPABASE_SERVICE_KEY or not DB_URL:
     raise ValueError("Не заданы обязательные переменные окружения: SUPABASE_URL, SUPABASE_SERVICE_KEY, DB_URL")
 supabase = create_client(SUPABASE_URL, SUPABASE_SERVICE_KEY)
-def get_db():
-    conn = psycopg2.connect(DB_URL, cursor_factory=RealDictCursor)
-    return conn
+
 
 # ========== ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ  ==========
 def add_default_avatars_for_user(user_id: str):
@@ -742,12 +754,15 @@ def grant_achievement_if_not_obtained(user_id: str, achievement_id: str):
                 print(f"  ⚠️ Достижение уже есть: {e}")
                 conn.commit()
                 return False
-            cur.execute("UPDATE players SET exp = exp + %s, gold = gold + %s WHERE id = %s",
-                        (reward['exp_reward'], reward['gold_reward'], user_id))
-            new_level = recalculate_level(user_id)
+
+            # Начисляем награды (золото и опыт)
+            cur.execute("UPDATE players SET gold = gold + %s WHERE id = %s",
+                        (reward['gold_reward'], user_id))
+            # Вызываем recalculate_level с наградой опыта
+            new_level = recalculate_level(user_id, reward['exp_reward'])
             print(f"New level after achievement: {new_level}")
             conn.commit()
-            # Отправляем уведомление о получении достижения
+            # Уведомление
             add_notification(user_id, 'achievement', f'Достижение "{reward["name"]}" получено!',
                              f'Награда: +{reward["exp_reward"]} опыта, +{reward["gold_reward"]} золота.')
             print(f"  ✅ Уведомление о достижении отправлено")
