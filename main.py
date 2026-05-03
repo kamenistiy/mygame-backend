@@ -45,12 +45,6 @@ def required_exp(level: int) -> int:
         return 20 * (2 ** (level - 1))
 
 def recalculate_level(user_id: str, exp_add: int = 0) -> int:
-    """
-    Добавляет опыт (exp_add) к общему накопленному опыту игрока,
-    пересчитывает уровень и обновляет exp как остаток внутри уровня.
-    Возвращает новый уровень.
-    (Не коммитит, коммит делает вызывающая функция)
-    """
     with get_db() as conn:
         with conn.cursor() as cur:
             cur.execute("SELECT exp, level FROM players WHERE id = %s", (user_id,))
@@ -65,9 +59,9 @@ def recalculate_level(user_id: str, exp_add: int = 0) -> int:
             while exp_rem >= required_exp(new_level):
                 exp_rem -= required_exp(new_level)
                 new_level += 1
-            # Обновляем БД, но не коммитим
             cur.execute("UPDATE players SET exp = %s, level = %s WHERE id = %s",
                         (exp_rem, new_level, user_id))
+            conn.commit() 
             if new_level != current_level:
                 print(f"Level up: {current_level} -> {new_level} for user {user_id}")
             return new_level
@@ -334,27 +328,21 @@ def review_avatar(req: AvatarReviewRequest, admin_user_id: str):
         new_count = cur.fetchone()['approved_avatars_count']
         
         # 4. Фиксируем все изменения в БД
-        # вместо старого вызова
-grant_achievement(cur, user_id, 'avatar_lover')
+        conn.commit()
+        print("=== APPROVE DONE (commit) ===")
 
-if new_count >= 5:
-    grant_achievement(cur, user_id, 'avatar_lover_5')
+        # ТЕПЕРЬ ВЫЗЫВАЕМ ДОСТИЖЕНИЯ И УВЕДОМЛЕНИЯ
+        grant_achievement_if_not_obtained(user_id, 'avatar_lover')
+        if new_count >= 5:
+            grant_achievement_if_not_obtained(user_id, 'avatar_lover_5')
+        if new_count >= 10:
+            grant_achievement_if_not_obtained(user_id, 'avatar_lover_10')
 
-if new_count >= 10:
-    grant_achievement(cur, user_id, 'avatar_lover_10')
+        orig_filename = request.get('original_filename', 'неизвестный файл')
+        add_notification(user_id, 'system', 'Аватар одобрен',
+                         f'Ваша заявка на файл "{orig_filename}" одобрена. Аватар добавлен в библиотеку профиля.')
 
-# уведомление об аватаре тоже сюда
-cur.execute("""
-    INSERT INTO notifications (user_id, type, title, message, expires_at, is_read)
-    VALUES (%s, %s, %s, %s, NOW() + INTERVAL '1 year', false)
-""", (
-    user_id,
-    'system',
-    'Аватар одобрен',
-    f'Ваша заявка на файл "{orig_filename}" одобрена. Аватар добавлен в библиотеку профиля.'
-))
-
-conn.commit()
+        return {"success": True}
 
 
 @app.get("/")
