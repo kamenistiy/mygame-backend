@@ -282,7 +282,7 @@ def review_avatar(req: AvatarReviewRequest, admin_user_id: str):
         
         # Обновляем статус заявки
         cur.execute("UPDATE avatar_requests SET status = 'approved', reviewed_at = NOW() WHERE id = %s", (req.request_id,))
-        
+        grant_achievement_if_not_obtained(user_id, 'avatar_lover')
         # Увеличиваем счётчик
         cur.execute("UPDATE players SET approved_avatars_count = approved_avatars_count + 1 WHERE id = %s RETURNING approved_avatars_count", (user_id,))
         new_count = cur.fetchone()['approved_avatars_count']
@@ -677,30 +677,22 @@ def grant_achievement_if_not_obtained(user_id: str, achievement_id: str):
     """Выдаёт достижение игроку (без сложных проверок)."""
     with get_db() as conn:
         with conn.cursor() as cur:
-            # Отключаем таймаут
             cur.execute("SET statement_timeout = 0")
-            
-            # Получаем награды
             cur.execute("SELECT exp_reward, gold_reward FROM achievements WHERE id = %s", (achievement_id,))
             reward = cur.fetchone()
             if not reward:
                 return False
-            
-            # Пытаемся вставить достижение (если уже есть – получим ошибку, но проигнорируем)
             try:
                 cur.execute("""
                     INSERT INTO user_achievements (user_id, achievement_id, current_progress, is_unlocked, unlocked_at)
                     VALUES (%s, %s, 1, true, NOW())
                 """, (user_id, achievement_id))
             except Exception as e:
-                print(f"Достижение {achievement_id} уже есть у пользователя {user_id}: {e}")
-                conn.rollback()
+                print(f"Достижение {achievement_id} уже есть: {e}")
+                conn.commit()  # важно: не rollback, а просто фиксируем (транзакция пустая)
                 return False
-            
-            # Начисляем награды
             cur.execute("UPDATE players SET exp = exp + %s, gold = gold + %s WHERE id = %s",
                         (reward['exp_reward'], reward['gold_reward'], user_id))
-            
             conn.commit()
             return True
         
