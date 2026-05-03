@@ -679,26 +679,39 @@ def mark_notifications_read(user_id: str, notification_ids: List[str] = None):
         
 #Достижение с аватарами 1,5,10   
 def grant_achievement_if_not_obtained(user_id: str, achievement_id: str):
-    """Выдаёт достижение игроку (без сложных проверок)."""
+    print(f"🎯 grant_achievement вызвана: {achievement_id} для {user_id}")
     with get_db() as conn:
         with conn.cursor() as cur:
             cur.execute("SET statement_timeout = 0")
+            print("  ✅ statement_timeout=0")
+            
+            print("  🔍 Получаем награды...")
             cur.execute("SELECT exp_reward, gold_reward FROM achievements WHERE id = %s", (achievement_id,))
             reward = cur.fetchone()
             if not reward:
+                print(f"  ❌ Достижение {achievement_id} не найдено в таблице achievements")
                 return False
+            print(f"  ✅ Награды: +{reward['exp_reward']} exp, +{reward['gold_reward']} gold")
+            
+            print("  🔍 Пытаемся вставить достижение...")
             try:
                 cur.execute("""
                     INSERT INTO user_achievements (user_id, achievement_id, current_progress, is_unlocked, unlocked_at)
                     VALUES (%s, %s, 1, true, NOW())
                 """, (user_id, achievement_id))
+                print("  ✅ Вставка успешна")
             except Exception as e:
-                print(f"Достижение {achievement_id} уже есть: {e}")
-                conn.commit()  # важно: не rollback, а просто фиксируем (транзакция пустая)
+                print(f"  ⚠️ Ошибка вставки (скорее всего, уже есть): {e}")
+                conn.commit()
                 return False
+            
+            print("  🔍 Начисляем опыт и золото...")
             cur.execute("UPDATE players SET exp = exp + %s, gold = gold + %s WHERE id = %s",
                         (reward['exp_reward'], reward['gold_reward'], user_id))
+            print("  ✅ Обновление игрока успешно")
+            
             conn.commit()
+            print("  ✅ Коммит выполнен")
             return True
         
 
