@@ -49,31 +49,25 @@ def recalculate_level(user_id: str, exp_add: int = 0) -> int:
     Добавляет опыт (exp_add) к общему накопленному опыту игрока,
     пересчитывает уровень и обновляет exp как остаток внутри уровня.
     Возвращает новый уровень.
+    (Не коммитит, коммит делает вызывающая функция)
     """
     with get_db() as conn:
         with conn.cursor() as cur:
-            # Читаем текущий общий опыт и уровень
             cur.execute("SELECT exp, level FROM players WHERE id = %s", (user_id,))
             player = cur.fetchone()
             if not player:
                 return 0
             total_exp = player['exp']
             current_level = player['level']
-            # Добавляем новый опыт к общему
             total_exp += exp_add
-            
-            # Пересчитываем уровень и остаток
             new_level = current_level
             exp_rem = total_exp
-            # Пока остаток больше или равен требуемому для следующего уровня
             while exp_rem >= required_exp(new_level):
                 exp_rem -= required_exp(new_level)
                 new_level += 1
-            
-            # Обновляем БД: exp = остаток, level = новый уровень
+            # Обновляем БД, но не коммитим
             cur.execute("UPDATE players SET exp = %s, level = %s WHERE id = %s",
                         (exp_rem, new_level, user_id))
-            conn.commit()
             if new_level != current_level:
                 print(f"Level up: {current_level} -> {new_level} for user {user_id}")
             return new_level
@@ -754,12 +748,17 @@ def grant_achievement_if_not_obtained(user_id: str, achievement_id: str):
                 conn.commit()
                 return False
 
-            # Начисляем награды (золото и опыт)
+            # Начисляем золото
             cur.execute("UPDATE players SET gold = gold + %s WHERE id = %s",
                         (reward['gold_reward'], user_id))
-            # Вызываем recalculate_level с наградой опыта
+            # Пересчитываем уровень и опыт (recalculate_level сам коммитит?)
+            # Убедимся, что recalculate_level не коммитит, а мы закоммитим после.
+            # Для этого изменим recalculate_level: уберём из него commit.
+            # Но сейчас recalculate_level содержит commit. Лучше переписать recalculate_level без commit,
+            # или оставить как есть, но тогда мы должны вызвать его до коммита в этой функции.
             new_level = recalculate_level(user_id, reward['exp_reward'])
             print(f"New level after achievement: {new_level}")
+            # Коммитим все изменения (золото и уровень, который обновился в recalculate_level)
             conn.commit()
             # Уведомление
             add_notification(user_id, 'achievement', f'Достижение "{reward["name"]}" получено!',
