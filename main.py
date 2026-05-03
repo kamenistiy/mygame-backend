@@ -334,22 +334,28 @@ def review_avatar(req: AvatarReviewRequest, admin_user_id: str):
         new_count = cur.fetchone()['approved_avatars_count']
         
         # 4. Фиксируем все изменения в БД
-        conn.commit()
-        print("=== APPROVE DONE (commit) ===")
-        
-        # 5. После коммита выдаём достижения (в отдельных транзакциях)
-        grant_achievement_if_not_obtained(user_id, 'avatar_lover')
-        if new_count >= 5:
-            grant_achievement_if_not_obtained(user_id, 'avatar_lover_5')
-        if new_count >= 10:
-            grant_achievement_if_not_obtained(user_id, 'avatar_lover_10')
-        
-        # 6. Отправляем уведомление (тоже после коммита)
-        orig_filename = request.get('original_filename', 'неизвестный файл')
-        add_notification(user_id, 'system', 'Аватар одобрен',
-                         f'Ваша заявка на файл "{orig_filename}" одобрена. Аватар добавлен в библиотеку профиля.')
-        
-        return {"success": True}
+        # вместо старого вызова
+grant_achievement(cur, user_id, 'avatar_lover')
+
+if new_count >= 5:
+    grant_achievement(cur, user_id, 'avatar_lover_5')
+
+if new_count >= 10:
+    grant_achievement(cur, user_id, 'avatar_lover_10')
+
+# уведомление об аватаре тоже сюда
+cur.execute("""
+    INSERT INTO notifications (user_id, type, title, message, expires_at, is_read)
+    VALUES (%s, %s, %s, %s, NOW() + INTERVAL '1 year', false)
+""", (
+    user_id,
+    'system',
+    'Аватар одобрен',
+    f'Ваша заявка на файл "{orig_filename}" одобрена. Аватар добавлен в библиотеку профиля.'
+))
+
+conn.commit()
+
 
 @app.get("/")
 def root():
@@ -727,45 +733,70 @@ def mark_notifications_read(user_id: str, notification_ids: List[str] = None):
             return {"success": True}
         
 #Достижение с аватарами 1,5,10   
-def grant_achievement_if_not_obtained(user_id: str, achievement_id: str):
-    print(f"🎯 grant_achievement вызвана: {achievement_id} для {user_id}")
-    with get_db() as conn:
-        with conn.cursor() as cur:
-            cur.execute("SET statement_timeout = 0")
-            cur.execute("SELECT name, exp_reward, gold_reward FROM achievements WHERE id = %s", (achievement_id,))
-            reward = cur.fetchone()
-            if not reward:
-                print(f"  ❌ Достижение {achievement_id} не найдено")
-                return False
-            try:
-                cur.execute("""
-                    INSERT INTO user_achievements (user_id, achievement_id, current_progress, is_unlocked, unlocked_at)
-                    VALUES (%s, %s, 1, true, NOW())
-                """, (user_id, achievement_id))
-                print(f"  ✅ Вставка успешна")
-            except Exception as e:
-                print(f"  ⚠️ Достижение уже есть: {e}")
-                conn.commit()
-                return False
+def grant_achievement(cur, user_id: str, achievement_id: str):
+    print(f"🎯 grant_achievement: {achievement_id} для {user_id}")
 
-            # Начисляем золото
-            cur.execute("UPDATE players SET gold = gold + %s WHERE id = %s",
-                        (reward['gold_reward'], user_id))
-            # Пересчитываем уровень и опыт (recalculate_level сам коммитит?)
-            # Убедимся, что recalculate_level не коммитит, а мы закоммитим после.
-            # Для этого изменим recalculate_level: уберём из него commit.
-            # Но сейчас recalculate_level содержит commit. Лучше переписать recalculate_level без commit,
-            # или оставить как есть, но тогда мы должны вызвать его до коммита в этой функции.
-            new_level = recalculate_level(user_id, reward['exp_reward'])
-            print(f"New level after achievement: {new_level}")
-            # Коммитим все изменения (золото и уровень, который обновился в recalculate_level)
-            conn.commit()
-            # Уведомление
-            add_notification(user_id, 'achievement', f'Достижение "{reward["name"]}" получено!',
-                             f'Награда: +{reward["exp_reward"]} опыта, +{reward["gold_reward"]} золота.')
-            print(f"  ✅ Уведомление о достижении отправлено")
-            return True
+    cur.execute(
+        "SELECT name, exp_reward, gold_reward FROM achievements WHERE id = %s",
+        (achievement_id,)
+    )
+    reward = cur.fetchone()
+    if not reward:
+        return False
 
+    # проверка на дубликат
+    cur.execute("""
+        SELECT 1 FROM user_achievements
+        WHERE user_id = %s AND achievement_id = %s
+    """, (user_id, achievement_id))
+
+    if cur.fetchone():
+        return False
+
+    # добавляем достижение
+    cur.execute("""
+        INSERT INTO user_achievements (user_id, achievement_id, current_progress, is_unlocked, unlocked_at)
+        VALUES (%s, %s, 1, true, NOW())
+    """, (user_id, achievement_id))
+
+    # золото
+    cur.execute("""
+        UPDATE players
+        SET gold = gold + %s
+        WHERE id = %s
+    """, (reward['gold_reward'], user_id))
+
+    # опыт (НОВАЯ система!)
+    add_exp_internal(cur, user_id, reward['exp_reward'])
+
+    # уведомление (тоже через cur!)
+    cur.execute("""
+        INSERT INTO notifications (user_id, type, title, message, expires_at, is_read)
+        VALUES (%s, %s, %s, %s, NOW() + INTERVAL '1 year', false)
+    """, (
+        user_id,
+        'achievement',
+        f'Достижение "{reward["name"]}" получено!',
+        f'Награда: +{reward["exp_reward"]} опыта, +{reward["gold_reward"]} золота.'
+    ))
+
+    return True
+def add_exp_internal(cur, user_id: str, exp_to_add: int):
+    cur.execute("SELECT exp, level FROM players WHERE id = %s", (user_id,))
+    player = cur.fetchone()
+
+    exp = player['exp'] + exp_to_add
+    level = player['level']
+
+    while exp >= required_exp(level):
+        exp -= required_exp(level)
+        level += 1
+
+    cur.execute("""
+        UPDATE players
+        SET exp = %s, level = %s
+        WHERE id = %s
+    """, (exp, level, user_id))
 
 print("=== ALL ROUTES REGISTERED ===")
 
