@@ -286,7 +286,8 @@ def review_avatar(req: AvatarReviewRequest, admin_user_id: str):
         # Увеличиваем счётчик
         cur.execute("UPDATE players SET approved_avatars_count = approved_avatars_count + 1 WHERE id = %s RETURNING approved_avatars_count", (user_id,))
         new_count = cur.fetchone()['approved_avatars_count']
-        
+        add_notification(user_id, 'system', 'Аватар одобрен',
+          f'Ваша заявка на файл "{request["original_filename"]}" одобрена. Аватар добавлен в библиотеку профиля.')
         conn.commit()
         print("=== APPROVE DONE ===")
         return {"success": True}
