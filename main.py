@@ -44,37 +44,7 @@ def required_exp(level: int) -> int:
     else:
         return 20 * (2 ** (level - 1))
 
-def recalculate_level(user_id: str, exp_add: int = 0) -> int:
-    print(f"  🔁 recalculate_level: user={user_id}, exp_add={exp_add}")
-    try:
-        print("  🔁 Попытка получить соединение...")
-        with get_db() as conn:
-            print("  🔁 Соединение получено")
-            with conn.cursor() as cur:
-                print("  🔁 Курсор получен")
-                cur.execute("SET statement_timeout = 0")
-                print("  🔁 Таймаут сброшен")
-                cur.execute("SELECT exp, level FROM players WHERE id = %s", (user_id,))
-                player = cur.fetchone()
-                if not player:
-                    print("  ❌ Игрок не найден")
-                    return 0
-                total_exp = player['exp'] + exp_add
-                current_level = player['level']
-                new_level = current_level
-                exp_rem = total_exp
-                while exp_rem >= required_exp(new_level):
-                    exp_rem -= required_exp(new_level)
-                    new_level += 1
-                cur.execute("UPDATE players SET exp = %s, level = %s WHERE id = %s",
-                            (exp_rem, new_level, user_id))
-                conn.commit()
-                if new_level != current_level:
-                    print(f"  Level up: {current_level} -> {new_level}")
-                return new_level
-    except Exception as e:
-        print(f"  ❌ Ошибка в recalculate_level: {e}")
-        return 0
+
 
 def get_db():
     max_retries = 3
@@ -733,53 +703,47 @@ def mark_notifications_read(user_id: str, notification_ids: List[str] = None):
 #Достижение с аватарами 1,5,10   
 def grant_achievement_if_not_obtained(user_id: str, achievement_id: str):
     print(f"🎯 START: {achievement_id} для {user_id}")
-    try:
-        with get_db() as conn:
-            print("  ✅ conn opened")
-            with conn.cursor() as cur:
-                print("  ✅ cursor opened")
-                cur.execute("SET statement_timeout = 0")
-                print("  ✅ timeout set")
-                
-                cur.execute("SELECT name, exp_reward, gold_reward FROM achievements WHERE id = %s", (achievement_id,))
-                reward = cur.fetchone()
-                print(f"  ✅ reward = {reward}")
-                if not reward:
-                    print(f"  ❌ Достижение {achievement_id} не найдено")
-                    return False
-                
-                print("  🔍 Вставка достижения...")
-                try:
-                    cur.execute("""
-                        INSERT INTO user_achievements (user_id, achievement_id, current_progress, is_unlocked, unlocked_at)
-                        VALUES (%s, %s, 1, true, NOW())
-                    """, (user_id, achievement_id))
-                    print("  ✅ Вставка успешна")
-                except Exception as e:
-                    print(f"  ⚠️ Ошибка вставки: {e}")
-                    conn.commit()
-                    return False
-                
-                print("  🔍 Обновление золота...")
-                cur.execute("UPDATE players SET gold = gold + %s WHERE id = %s",
-                            (reward['gold_reward'], user_id))
-                print("  ✅ Золото обновлено")
-                
-                print("  🔍 Вызов recalculate_level...")
-                new_level = recalculate_level(user_id, reward['exp_reward'])
-                print(f"  ✅ Новый уровень: {new_level}")
-                
+    with get_db() as conn:
+        with conn.cursor() as cur:
+            cur.execute("SET statement_timeout = 0")
+            cur.execute("SELECT name, exp_reward, gold_reward FROM achievements WHERE id = %s", (achievement_id,))
+            reward = cur.fetchone()
+            if not reward:
+                print(f"  ❌ Достижение {achievement_id} не найдено")
+                return False
+            try:
+                cur.execute("""
+                    INSERT INTO user_achievements (user_id, achievement_id, current_progress, is_unlocked, unlocked_at)
+                    VALUES (%s, %s, 1, true, NOW())
+                """, (user_id, achievement_id))
+                print("  ✅ Вставка успешна")
+            except Exception as e:
+                print(f"  ⚠️ Ошибка вставки: {e}")
                 conn.commit()
-                print("  ✅ Транзакция закоммичена")
-                
-                print("  🔍 Отправка уведомления...")
-                add_notification(user_id, 'achievement', f'Достижение "{reward["name"]}" получено!',
-                                 f'Награда: +{reward["exp_reward"]} опыта, +{reward["gold_reward"]} золота.')
-                print("  ✅ Уведомление отправлено")
-                return True
-    except Exception as e:
-        print(f"  ❌ Глобальная ошибка: {e}")
-        return False
+                return False
+
+            # Обновляем золото
+            cur.execute("UPDATE players SET gold = gold + %s WHERE id = %s", (reward['gold_reward'], user_id))
+            
+            # Обновляем опыт и уровень 
+            cur.execute("SELECT exp, level FROM players WHERE id = %s", (user_id,))
+            player = cur.fetchone()
+            exp = player['exp'] + reward['exp_reward']
+            level = player['level']
+            new_level = level
+            exp_rem = exp
+            while exp_rem >= required_exp(new_level):
+                exp_rem -= required_exp(new_level)
+                new_level += 1
+            cur.execute("UPDATE players SET exp = %s, level = %s WHERE id = %s", (exp_rem, new_level, user_id))
+            
+            conn.commit()
+            print(f"  ✅ Награды выданы: +{reward['exp_reward']} опыта, +{reward['gold_reward']} золота, уровень {level} -> {new_level}")
+            
+            # Уведомление
+            add_notification(user_id, 'achievement', f'Достижение "{reward["name"]}" получено!',
+                             f'Награда: +{reward["exp_reward"]} опыта, +{reward["gold_reward"]} золота.')
+            return True
 
 print("=== ALL ROUTES REGISTERED ===")
 
