@@ -282,18 +282,26 @@ def review_avatar(req: AvatarReviewRequest, admin_user_id: str):
         
         # Обновляем статус заявки
         cur.execute("UPDATE avatar_requests SET status = 'approved', reviewed_at = NOW() WHERE id = %s", (req.request_id,))
-        grant_achievement_if_not_obtained(user_id, 'avatar_lover')
+        
         # Увеличиваем счётчик
         cur.execute("UPDATE players SET approved_avatars_count = approved_avatars_count + 1 WHERE id = %s RETURNING approved_avatars_count", (user_id,))
         new_count = cur.fetchone()['approved_avatars_count']
-        add_notification(user_id, 'system', 'Аватар одобрен',
-          f'Ваша заявка на файл "{request["original_filename"]}" одобрена. Аватар добавлен в библиотеку профиля.')
+        
+        # Выдаём достижения (они открывают свои соединения, но это нормально)
+        grant_achievement_if_not_obtained(user_id, 'avatar_lover')
         if new_count >= 5:
             grant_achievement_if_not_obtained(user_id, 'avatar_lover_5')
         if new_count >= 10:
             grant_achievement_if_not_obtained(user_id, 'avatar_lover_10')
+        
+        # Фиксируем основную транзакцию
         conn.commit()
-        print("=== APPROVE DONE ===")
+        print("=== APPROVE DONE (commit) ===")
+        
+        # Уведомление отправляем ПОСЛЕ коммита, в отдельной транзакции
+        add_notification(user_id, 'system', 'Аватар одобрен',
+          f'Ваша заявка на файл "{request["original_filename"]}" одобрена. Аватар добавлен в библиотеку профиля.')
+        
         return {"success": True}
 
 @app.get("/")
