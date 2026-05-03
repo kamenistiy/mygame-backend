@@ -267,40 +267,40 @@ def review_avatar(req: AvatarReviewRequest, admin_user_id: str):
         print("=== APPROVE START ===")
         new_path = storage_path
         
-        # Вставляем запись в библиотеку аватаров
+        # 1. Добавляем аватар в библиотеку
         cur.execute("""
             INSERT INTO user_avatars (user_id, storage_path, is_active)
             VALUES (%s, %s, %s)
             RETURNING id
         """, (user_id, new_path, False))
         avatar_id = cur.fetchone()['id']
-        # Если активного аватара нет, делаем этот активным
         cur.execute("SELECT id FROM user_avatars WHERE user_id = %s AND is_active = true", (user_id,))
         active = cur.fetchone()
         if not active:
             cur.execute("UPDATE user_avatars SET is_active = true WHERE id = %s", (avatar_id,))
         
-        # Обновляем статус заявки
+        # 2. Обновляем статус заявки
         cur.execute("UPDATE avatar_requests SET status = 'approved', reviewed_at = NOW() WHERE id = %s", (req.request_id,))
         
-        # Увеличиваем счётчик
+        # 3. Увеличиваем счётчик одобренных аватаров
         cur.execute("UPDATE players SET approved_avatars_count = approved_avatars_count + 1 WHERE id = %s RETURNING approved_avatars_count", (user_id,))
         new_count = cur.fetchone()['approved_avatars_count']
         
-        # Выдаём достижения (они открывают свои соединения, но это нормально)
+        # 4. Фиксируем все изменения в БД
+        conn.commit()
+        print("=== APPROVE DONE (commit) ===")
+        
+        # 5. После коммита выдаём достижения (в отдельных транзакциях)
         grant_achievement_if_not_obtained(user_id, 'avatar_lover')
         if new_count >= 5:
             grant_achievement_if_not_obtained(user_id, 'avatar_lover_5')
         if new_count >= 10:
             grant_achievement_if_not_obtained(user_id, 'avatar_lover_10')
         
-        # Фиксируем основную транзакцию
-        conn.commit()
-        print("=== APPROVE DONE (commit) ===")
-        
-        # Уведомление отправляем ПОСЛЕ коммита, в отдельной транзакции
+        # 6. Отправляем уведомление (тоже после коммита)
+        orig_filename = request.get('original_filename', 'неизвестный файл')
         add_notification(user_id, 'system', 'Аватар одобрен',
-          f'Ваша заявка на файл "{request["original_filename"]}" одобрена. Аватар добавлен в библиотеку профиля.')
+                         f'Ваша заявка на файл "{orig_filename}" одобрена. Аватар добавлен в библиотеку профиля.')
         
         return {"success": True}
 
