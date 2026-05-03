@@ -85,7 +85,6 @@ def get_db():
             conn = psycopg2.connect(
                 DB_URL,
                 cursor_factory=RealDictCursor,
-                prepare_threshold=0  # обязательно для Transaction Pooler
             )
             return conn
         except OperationalError as e:
