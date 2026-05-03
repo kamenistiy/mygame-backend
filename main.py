@@ -709,12 +709,33 @@ def grant_achievement_if_not_obtained(user_id: str, achievement_id: str):
                 return False
             cur.execute("UPDATE players SET exp = exp + %s, gold = gold + %s WHERE id = %s",
                         (reward['exp_reward'], reward['gold_reward'], user_id))
+            recalculate_level(user_id)
             conn.commit()
             # Отправляем уведомление о получении достижения
             add_notification(user_id, 'achievement', f'Достижение "{reward["name"]}" получено!',
                              f'Награда: +{reward["exp_reward"]} опыта, +{reward["gold_reward"]} золота.')
             print(f"  ✅ Уведомление о достижении отправлено")
             return True
+
+def recalculate_level(user_id: str):
+    """Пересчитывает уровень игрока на основе текущего опыта и обновляет БД."""
+    with get_db() as conn:
+        with conn.cursor() as cur:
+            cur.execute("SELECT exp, level FROM players WHERE id = %s", (user_id,))
+            player = cur.fetchone()
+            if not player:
+                return
+            current_exp = player['exp']
+            current_level = player['level']
+            new_level = current_level
+            # Пересчитываем уровень, пока опыта хватает на следующий
+            while current_exp >= required_exp(new_level):
+                current_exp -= required_exp(new_level)
+                new_level += 1
+            if new_level != current_level:
+                cur.execute("UPDATE players SET level = %s WHERE id = %s", (new_level, user_id))
+                conn.commit()
+                # Можно добавить уведомление о повышении уровня (опционально)
 
 print("=== ALL ROUTES REGISTERED ===")
 
