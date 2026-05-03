@@ -288,6 +288,10 @@ def review_avatar(req: AvatarReviewRequest, admin_user_id: str):
         new_count = cur.fetchone()['approved_avatars_count']
         add_notification(user_id, 'system', 'Аватар одобрен',
           f'Ваша заявка на файл "{request["original_filename"]}" одобрена. Аватар добавлен в библиотеку профиля.')
+        if new_count >= 5:
+            grant_achievement_if_not_obtained(user_id, 'avatar_lover_5')
+        if new_count >= 10:
+            grant_achievement_if_not_obtained(user_id, 'avatar_lover_10')
         conn.commit()
         print("=== APPROVE DONE ===")
         return {"success": True}
