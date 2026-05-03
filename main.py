@@ -291,7 +291,7 @@ def review_avatar(req: AvatarReviewRequest, admin_user_id: str):
         new_count = cur.fetchone()['approved_avatars_count']
         print("DEBUG: before achievements")
             # Выдаём достижения (проверяем пороги)
-        #grant_achievement_if_not_obtained(user_id, 'avatar_lover')
+        grant_achievement_if_not_obtained(user_id, 'avatar_lover')
         #if new_count >= 5:
               #  grant_achievement_if_not_obtained(user_id, 'avatar_lover_5')
        # if new_count >= 10:
