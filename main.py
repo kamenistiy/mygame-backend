@@ -265,12 +265,28 @@ def review_avatar(req: AvatarReviewRequest, admin_user_id: str):
     
     if req.action == 'approve':
         print("=== APPROVE START ===")
-        # Просто обновляем статус заявки и увеличиваем счётчик
+        new_path = storage_path
+        
+        # Вставляем запись в библиотеку аватаров
+        cur.execute("""
+            INSERT INTO user_avatars (user_id, storage_path, is_active)
+            VALUES (%s, %s, %s)
+            RETURNING id
+        """, (user_id, new_path, False))
+        avatar_id = cur.fetchone()['id']
+        # Если активного аватара нет, делаем этот активным
+        cur.execute("SELECT id FROM user_avatars WHERE user_id = %s AND is_active = true", (user_id,))
+        active = cur.fetchone()
+        if not active:
+            cur.execute("UPDATE user_avatars SET is_active = true WHERE id = %s", (avatar_id,))
+        
+        # Обновляем статус заявки
         cur.execute("UPDATE avatar_requests SET status = 'approved', reviewed_at = NOW() WHERE id = %s", (req.request_id,))
-        print("Status updated")
+        
+        # Увеличиваем счётчик
         cur.execute("UPDATE players SET approved_avatars_count = approved_avatars_count + 1 WHERE id = %s RETURNING approved_avatars_count", (user_id,))
         new_count = cur.fetchone()['approved_avatars_count']
-        print(f"New count: {new_count}")
+        
         conn.commit()
         print("=== APPROVE DONE ===")
         return {"success": True}
