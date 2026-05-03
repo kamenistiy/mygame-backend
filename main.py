@@ -36,6 +36,34 @@ import time
 import logging
 from psycopg2 import OperationalError
 
+# Обновить данные игрока (опыт)
+def required_exp(level: int) -> int:
+    """Возвращает опыт, необходимый для перехода с level на level+1."""
+    if level == 1:
+        return 20
+    else:
+        return 20 * (2 ** (level - 1))
+
+def recalculate_level(user_id: str) -> int:
+    """Пересчитывает уровень игрока на основе текущего опыта, обновляет БД и возвращает новый уровень."""
+    with get_db() as conn:
+        with conn.cursor() as cur:
+            cur.execute("SELECT exp, level FROM players WHERE id = %s", (user_id,))
+            player = cur.fetchone()
+            if not player:
+                return 0
+            exp = player['exp']
+            level = player['level']
+            new_level = level
+            while exp >= required_exp(new_level):
+                exp -= required_exp(new_level)
+                new_level += 1
+            if new_level != level:
+                cur.execute("UPDATE players SET level = %s WHERE id = %s", (new_level, user_id))
+                conn.commit()
+                print(f"Level up: {level} -> {new_level} for {user_id}")
+            return new_level
+
 def get_db():
     max_retries = 3
     for i in range(max_retries):
@@ -317,13 +345,6 @@ def test():
     return {"test": "ok"}
 
 
-# Обновить данные игрока
-def required_exp(level: int) -> int:
-    """Возвращает опыт, необходимый для перехода с level на level+1."""
-    if level == 1:
-        return 20
-    else:
-        return 20 * (2 ** (level - 1))
 
 @app.get("/player/{user_id}")
 def get_player(user_id: str):
@@ -709,7 +730,9 @@ def grant_achievement_if_not_obtained(user_id: str, achievement_id: str):
                 return False
             cur.execute("UPDATE players SET exp = exp + %s, gold = gold + %s WHERE id = %s",
                         (reward['exp_reward'], reward['gold_reward'], user_id))
-            recalculate_level(user_id)
+            new_level = recalculate_level(user_id)
+            print(f"New level after achievement: {new_level}")
+            conn.commit()
             conn.commit()
             # Отправляем уведомление о получении достижения
             add_notification(user_id, 'achievement', f'Достижение "{reward["name"]}" получено!',
@@ -717,25 +740,6 @@ def grant_achievement_if_not_obtained(user_id: str, achievement_id: str):
             print(f"  ✅ Уведомление о достижении отправлено")
             return True
 
-def recalculate_level(user_id: str):
-    """Пересчитывает уровень игрока на основе текущего опыта и обновляет БД."""
-    with get_db() as conn:
-        with conn.cursor() as cur:
-            cur.execute("SELECT exp, level FROM players WHERE id = %s", (user_id,))
-            player = cur.fetchone()
-            if not player:
-                return
-            current_exp = player['exp']
-            current_level = player['level']
-            new_level = current_level
-            # Пересчитываем уровень, пока опыта хватает на следующий
-            while current_exp >= required_exp(new_level):
-                current_exp -= required_exp(new_level)
-                new_level += 1
-            if new_level != current_level:
-                cur.execute("UPDATE players SET level = %s WHERE id = %s", (new_level, user_id))
-                conn.commit()
-                # Можно добавить уведомление о повышении уровня (опционально)
 
 print("=== ALL ROUTES REGISTERED ===")
 
