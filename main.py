@@ -295,6 +295,20 @@ def review_avatar(req: AvatarReviewRequest, admin_user_id: str):
         print("=== APPROVE START ===")
         new_path = storage_path
         
+                # Перемещение файла из pending в approved (если файл существует)
+        if storage_path and storage_path.startswith('pending/'):
+            try:
+                # Проверяем, существует ли файл
+                supabase.storage.from_("avatars").download(storage_path)
+                new_path = storage_path.replace('pending/', 'approved/')
+                file_data = supabase.storage.from_("avatars").download(storage_path)
+                supabase.storage.from_("avatars").upload(new_path, file_data)
+                supabase.storage.from_("avatars").remove([storage_path])
+                storage_path = new_path  # обновляем путь для БД
+                print(f"Файл перемещён в {new_path}")
+            except Exception as e:
+                print(f"Не удалось переместить файл {storage_path}: {e}")
+                # не прерываем выполнение, оставляем как есть
         # 1. Добавляем аватар в библиотеку
         cur.execute("""
             INSERT INTO user_avatars (user_id, storage_path, is_active)
@@ -732,7 +746,6 @@ def grant_achievement_if_not_obtained(user_id: str, achievement_id: str):
                         (reward['exp_reward'], reward['gold_reward'], user_id))
             new_level = recalculate_level(user_id)
             print(f"New level after achievement: {new_level}")
-            conn.commit()
             conn.commit()
             # Отправляем уведомление о получении достижения
             add_notification(user_id, 'achievement', f'Достижение "{reward["name"]}" получено!',
