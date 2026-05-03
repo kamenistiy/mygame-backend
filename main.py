@@ -264,73 +264,16 @@ def review_avatar(req: AvatarReviewRequest, admin_user_id: str):
     storage_path = request['storage_path']
     
     if req.action == 'approve':
-        print(f"Одобрение заявки {req.request_id}, storage_path = {storage_path}")
-        new_path = storage_path
-        
-        # 2. Добавляем запись в библиотеку аватаров
-        cur.execute("""
-            INSERT INTO user_avatars (user_id, storage_path, is_active)
-            VALUES (%s, %s, %s)
-            RETURNING id
-        """, (user_id, new_path, False))
-        avatar_id = cur.fetchone()['id']
-                # 2.1. Если у пользователя ещё нет активного аватара, сделаем этот активным
-        cur.execute("SELECT id FROM user_avatars WHERE user_id = %s AND is_active = true", (user_id,))
-        active = cur.fetchone()
-        if not active:
-            cur.execute("UPDATE user_avatars SET is_active = true WHERE id = %s", (avatar_id,))
-
-        # 3. Обновляем статус заявки
-        cur.execute("""
-            UPDATE avatar_requests
-            SET status = 'approved', reviewed_at = NOW()
-            WHERE id = %s
-        """, (req.request_id,))
-          # Увеличиваем счётчик одобренных аватаров пользователя
+        print("=== APPROVE START ===")
+        # Просто обновляем статус заявки и увеличиваем счётчик
+        cur.execute("UPDATE avatar_requests SET status = 'approved', reviewed_at = NOW() WHERE id = %s", (req.request_id,))
+        print("Status updated")
         cur.execute("UPDATE players SET approved_avatars_count = approved_avatars_count + 1 WHERE id = %s RETURNING approved_avatars_count", (user_id,))
         new_count = cur.fetchone()['approved_avatars_count']
-        print("DEBUG: before achievements")
-            # Выдаём достижения (проверяем пороги)
-        grant_achievement_if_not_obtained(user_id, 'avatar_lover')
-        if new_count >= 5:
-               grant_achievement_if_not_obtained(user_id, 'avatar_lover_5')
-        if new_count >= 10:
-               grant_achievement_if_not_obtained(user_id, 'avatar_lover_10')
-
-        #Отправляем уведомление об одобрении (используем original_filename из request)
-        add_notification(user_id, 'system', 'Аватар одобрен',
-          f'Ваша заявка на файл "{request["original_filename"]}" одобрена. Аватар добавлен в библиотеку профиля.')
-        
-    elif req.action == 'reject':
-        # 1. Удаляем файл из Storage (если есть)
-        if storage_path:
-            try:
-                supabase.storage.from_("avatars").remove([storage_path])
-            except:
-                pass
-        
-        # 2. Обновляем статус заявки с причиной отказа
-        cur.execute("""
-            UPDATE avatar_requests
-            SET status = 'rejected', reason = %s, reviewed_at = NOW()
-            WHERE id = %s
-        """, (req.reason, req.request_id))
-        
-        # 3. Возвращаем фолиант в инвентарь
-        cur.execute("""
-            INSERT INTO inventory (user_id, item_id, quantity)
-            VALUES (%s, 'avatar_certificate', 1)
-            ON CONFLICT (user_id, item_id)
-            DO UPDATE SET quantity = inventory.quantity + 1
-        """, (user_id,))
-    
-    else:
-        raise HTTPException(status_code=400, detail="Неверное действие")
-    
-    conn.commit()
-    cur.close()
-    conn.close()
-    return {"success": True}
+        print(f"New count: {new_count}")
+        conn.commit()
+        print("=== APPROVE DONE ===")
+        return {"success": True}
 
 @app.get("/")
 def root():
