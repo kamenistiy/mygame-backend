@@ -721,70 +721,32 @@ def mark_notifications_read(user_id: str, notification_ids: List[str] = None):
             return {"success": True}
         
 #Достижение с аватарами 1,5,10   
-def grant_achievement(cur, user_id: str, achievement_id: str):
-    print(f"🎯 grant_achievement: {achievement_id} для {user_id}")
-
-    cur.execute(
-        "SELECT name, exp_reward, gold_reward FROM achievements WHERE id = %s",
-        (achievement_id,)
-    )
-    reward = cur.fetchone()
-    if not reward:
-        return False
-
-    # проверка на дубликат
-    cur.execute("""
-        SELECT 1 FROM user_achievements
-        WHERE user_id = %s AND achievement_id = %s
-    """, (user_id, achievement_id))
-
-    if cur.fetchone():
-        return False
-
-    # добавляем достижение
-    cur.execute("""
-        INSERT INTO user_achievements (user_id, achievement_id, current_progress, is_unlocked, unlocked_at)
-        VALUES (%s, %s, 1, true, NOW())
-    """, (user_id, achievement_id))
-
-    # золото
-    cur.execute("""
-        UPDATE players
-        SET gold = gold + %s
-        WHERE id = %s
-    """, (reward['gold_reward'], user_id))
-
-    # опыт (НОВАЯ система!)
-    add_exp_internal(cur, user_id, reward['exp_reward'])
-
-    # уведомление (тоже через cur!)
-    cur.execute("""
-        INSERT INTO notifications (user_id, type, title, message, expires_at, is_read)
-        VALUES (%s, %s, %s, %s, NOW() + INTERVAL '1 year', false)
-    """, (
-        user_id,
-        'achievement',
-        f'Достижение "{reward["name"]}" получено!',
-        f'Награда: +{reward["exp_reward"]} опыта, +{reward["gold_reward"]} золота.'
-    ))
-
-    return True
-def add_exp_internal(cur, user_id: str, exp_to_add: int):
-    cur.execute("SELECT exp, level FROM players WHERE id = %s", (user_id,))
-    player = cur.fetchone()
-
-    exp = player['exp'] + exp_to_add
-    level = player['level']
-
-    while exp >= required_exp(level):
-        exp -= required_exp(level)
-        level += 1
-
-    cur.execute("""
-        UPDATE players
-        SET exp = %s, level = %s
-        WHERE id = %s
-    """, (exp, level, user_id))
+def grant_achievement_if_not_obtained(user_id: str, achievement_id: str):
+    print(f"🎯 grant_achievement_if_not_obtained: {achievement_id} для {user_id}")
+    with get_db() as conn:
+        with conn.cursor() as cur:
+            cur.execute("SET statement_timeout = 0")
+            cur.execute("SELECT name, exp_reward, gold_reward FROM achievements WHERE id = %s", (achievement_id,))
+            reward = cur.fetchone()
+            if not reward:
+                return False
+            try:
+                cur.execute("""
+                    INSERT INTO user_achievements (user_id, achievement_id, current_progress, is_unlocked, unlocked_at)
+                    VALUES (%s, %s, 1, true, NOW())
+                """, (user_id, achievement_id))
+            except Exception as e:
+                print(f"Достижение уже есть: {e}")
+                conn.commit()
+                return False
+            cur.execute("UPDATE players SET gold = gold + %s WHERE id = %s", (reward['gold_reward'], user_id))
+            new_level = recalculate_level(user_id, reward['exp_reward'])
+            print(f"New level after achievement: {new_level}")
+            conn.commit()
+            add_notification(user_id, 'achievement', f'Достижение "{reward["name"]}" получено!',
+                             f'Награда: +{reward["exp_reward"]} опыта, +{reward["gold_reward"]} золота.')
+            return True
+   
 
 print("=== ALL ROUTES REGISTERED ===")
 
