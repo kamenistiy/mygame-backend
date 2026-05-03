@@ -658,6 +658,7 @@ def get_notifications(user_id: str, type_filter: str = 'all', search: str = '', 
             return rows
         
 def add_notification(user_id: str, notif_type: str, title: str, message: str):
+    print(f"📢 add_notification: {title} для {user_id}")
     with get_db() as conn:
         with conn.cursor() as cur:
             cur.execute("""
@@ -691,37 +692,29 @@ def grant_achievement_if_not_obtained(user_id: str, achievement_id: str):
     with get_db() as conn:
         with conn.cursor() as cur:
             cur.execute("SET statement_timeout = 0")
-            print("  ✅ statement_timeout=0")
-            
-            print("  🔍 Получаем награды...")
-            cur.execute("SELECT exp_reward, gold_reward FROM achievements WHERE id = %s", (achievement_id,))
+            cur.execute("SELECT name, exp_reward, gold_reward FROM achievements WHERE id = %s", (achievement_id,))
             reward = cur.fetchone()
             if not reward:
-                print(f"  ❌ Достижение {achievement_id} не найдено в таблице achievements")
+                print(f"  ❌ Достижение {achievement_id} не найдено")
                 return False
-            print(f"  ✅ Награды: +{reward['exp_reward']} exp, +{reward['gold_reward']} gold")
-            
-            print("  🔍 Пытаемся вставить достижение...")
             try:
                 cur.execute("""
                     INSERT INTO user_achievements (user_id, achievement_id, current_progress, is_unlocked, unlocked_at)
                     VALUES (%s, %s, 1, true, NOW())
                 """, (user_id, achievement_id))
-                print("  ✅ Вставка успешна")
+                print(f"  ✅ Вставка успешна")
             except Exception as e:
-                print(f"  ⚠️ Ошибка вставки (скорее всего, уже есть): {e}")
+                print(f"  ⚠️ Достижение уже есть: {e}")
                 conn.commit()
                 return False
-            
-            print("  🔍 Начисляем опыт и золото...")
             cur.execute("UPDATE players SET exp = exp + %s, gold = gold + %s WHERE id = %s",
                         (reward['exp_reward'], reward['gold_reward'], user_id))
-            print("  ✅ Обновление игрока успешно")
-            
             conn.commit()
-            print("  ✅ Коммит выполнен")
+            # Отправляем уведомление о получении достижения
+            add_notification(user_id, 'achievement', f'Достижение "{reward["name"]}" получено!',
+                             f'Награда: +{reward["exp_reward"]} опыта, +{reward["gold_reward"]} золота.')
+            print(f"  ✅ Уведомление о достижении отправлено")
             return True
-        
 
 print("=== ALL ROUTES REGISTERED ===")
 
