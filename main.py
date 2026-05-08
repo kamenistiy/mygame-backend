@@ -101,6 +101,10 @@ class PlayerUpdate(BaseModel):
     gold: Optional[int] = None
     level: Optional[int] = None
 
+# отмена загрузки аватара
+class CancelRequest(BaseModel):
+    request_id: str
+    user_id: str
 
 # ========== МОДЕЛИ ДЛЯ ИНВЕНТАРЯ ==========
 class AddItemRequest(BaseModel):
@@ -619,35 +623,28 @@ def get_my_requests(user_id: str):
     return {"requests": requests}
 
 @app.post("/avatar-request/cancel")
-def cancel_avatar_request(request_id: str, user_id: str):
-    """Отменяет заявку на аватар и возвращает фолиант в инвентарь."""
+def cancel_avatar_request(req: CancelRequest):
     conn = get_db()
     cur = conn.cursor()
     try:
-        # Проверяем, существует ли заявка и имеет ли статус pending
-        cur.execute("SELECT status FROM avatar_requests WHERE id = %s AND user_id = %s", (request_id, user_id))
+        cur.execute("SELECT status FROM avatar_requests WHERE id = %s AND user_id = %s", (req.request_id, req.user_id))
         row = cur.fetchone()
         if not row:
             raise HTTPException(status_code=404, detail="Заявка не найдена")
         if row['status'] != 'pending':
-            raise HTTPException(status_code=400, detail="Заявка уже обработана, отмена невозможна")
+            raise HTTPException(status_code=400, detail="Заявка уже обработана")
 
-        # Удаляем заявку
-        cur.execute("DELETE FROM avatar_requests WHERE id = %s", (request_id,))
-
-        # Возвращаем фолиант в инвентарь
+        cur.execute("DELETE FROM avatar_requests WHERE id = %s", (req.request_id,))
         cur.execute("""
             INSERT INTO inventory (user_id, item_id, quantity)
             VALUES (%s, 'avatar_certificate', 1)
             ON CONFLICT (user_id, item_id)
             DO UPDATE SET quantity = inventory.quantity + 1
-        """, (user_id,))
-
+        """, (req.user_id,))
         conn.commit()
         return {"success": True}
     except Exception as e:
         conn.rollback()
-        print(f"Ошибка отмены заявки: {e}")
         raise HTTPException(status_code=500, detail=str(e))
     finally:
         cur.close()
