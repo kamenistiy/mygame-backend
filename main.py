@@ -221,9 +221,9 @@ def use_item(user_id: str, req: UseItemRequest):
         cur = conn.cursor()  # пересоздаём, т.к. remove_item_from_inventory закрыла соединение
         cur.execute("""
             INSERT INTO avatar_requests (user_id, status, username)
-            VALUES (%s, 'pending')
+            VALUES (%s, 'pending', (SELECT username FROM players WHERE id = %s))
             RETURNING id
-        """, (user_id,))
+        """, (user_id, user_id))
         new_request = cur.fetchone()
         conn.commit()
         cur.close()
