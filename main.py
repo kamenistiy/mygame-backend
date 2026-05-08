@@ -156,7 +156,8 @@ def get_inventory(user_id: str):
     conn = get_db()
     cur = conn.cursor()
     cur.execute("""
-        SELECT i.id, i.name, i.description, i.type, i.class, i.icon, inv.quantity
+        SELECT i.id, i.name, i.description, i.type, i.class, i.icon, inv.quantity,
+               i.rarity, i.level, i.strength, i.agility, i.intellect, i.body
         FROM inventory inv
         JOIN items i ON inv.item_id = i.id
         WHERE inv.user_id = %s
