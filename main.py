@@ -360,6 +360,11 @@ def review_avatar(req: AvatarReviewRequest, admin_user_id: str):
 
         conn.commit()
         print("=== REJECT DONE (commit) ===")
+        # Отправляем уведомление игроку об отказе
+        orig_filename = request.get('original_filename', 'неизвестный файл')
+        reason_text = f" Причина: {req.reason}" if req.reason else ""
+        add_notification(user_id, 'system', 'Аватар отклонён',
+                         f'Ваша заявка на файл "{orig_filename}" отклонена.{reason_text} Фолиант возвращён в инвентарь.')
         return {"success": True}
 
     else:
