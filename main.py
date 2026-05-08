@@ -78,7 +78,7 @@ def add_default_avatars_for_user(user_id: str):
                        'default_avatars/X.png']
             for path in avatars:
                 cur.execute("""
-                    INSERT INTO user_avatars (user_id, storage_path, is_active)
+                    INSERT INTO user_avatars (user_id, storage_path, is_active, username)
                     VALUES (%s, %s, false)
                     ON CONFLICT (user_id, storage_path) DO NOTHING
                 """, (user_id, path))
@@ -220,7 +220,7 @@ def use_item(user_id: str, req: UseItemRequest):
         # Создаём заявку на аватар
         cur = conn.cursor()  # пересоздаём, т.к. remove_item_from_inventory закрыла соединение
         cur.execute("""
-            INSERT INTO avatar_requests (user_id, status)
+            INSERT INTO avatar_requests (user_id, status, username)
             VALUES (%s, 'pending')
             RETURNING id
         """, (user_id,))
@@ -293,7 +293,7 @@ def review_avatar(req: AvatarReviewRequest, admin_user_id: str):
 
         # 1. Добавляем аватар в библиотеку
         cur.execute("""
-            INSERT INTO user_avatars (user_id, storage_path, is_active)
+            INSERT INTO user_avatars (user_id, storage_path, is_active, username)
             VALUES (%s, %s, %s)
             RETURNING id
         """, (user_id, new_path, False))
