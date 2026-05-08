@@ -573,6 +573,34 @@ def get_my_requests(user_id: str):
     conn.close()
     return {"requests": requests}
 
+@app.post("/avatar-request/cancel")
+def cancel_avatar_request(request_id: str, user_id: str):
+    conn = get_db()
+    cur = conn.cursor()
+    # Проверяем, что заявка существует и находится в статусе pending
+    cur.execute("SELECT status FROM avatar_requests WHERE id = %s AND user_id = %s", (request_id, user_id))
+    req = cur.fetchone()
+    if not req or req['status'] != 'pending':
+        cur.close()
+        conn.close()
+        raise HTTPException(status_code=400, detail="Заявка не найдена или уже обработана")
+    
+    # Удаляем заявку
+    cur.execute("DELETE FROM avatar_requests WHERE id = %s", (request_id,))
+    
+    # Возвращаем фолиант в инвентарь
+    cur.execute("""
+        INSERT INTO inventory (user_id, item_id, quantity)
+        VALUES (%s, 'avatar_certificate', 1)
+        ON CONFLICT (user_id, item_id)
+        DO UPDATE SET quantity = inventory.quantity + 1
+    """, (user_id,))
+    
+    conn.commit()
+    cur.close()
+    conn.close()
+    return {"success": True}
+
 @app.get("/achievements/all")
 def get_all_achievements():
     conn = get_db()
@@ -744,7 +772,9 @@ def grant_achievement_if_not_obtained(user_id: str, achievement_id: str):
             add_notification(user_id, 'achievement', f'Достижение "{reward["name"]}" получено!',
                              f'Награда: +{reward["exp_reward"]} опыта, +{reward["gold_reward"]} золота.')
             return True
+        
 
+        
 print("=== ALL ROUTES REGISTERED ===")
 
 
