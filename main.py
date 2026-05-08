@@ -620,31 +620,38 @@ def get_my_requests(user_id: str):
 
 @app.post("/avatar-request/cancel")
 def cancel_avatar_request(request_id: str, user_id: str):
+    """Отменяет заявку на аватар и возвращает фолиант в инвентарь."""
     conn = get_db()
     cur = conn.cursor()
-    # Проверяем, что заявка существует и находится в статусе pending
-    cur.execute("SELECT status FROM avatar_requests WHERE id = %s AND user_id = %s", (request_id, user_id))
-    req = cur.fetchone()
-    if not req or req['status'] != 'pending':
+    try:
+        # Проверяем, существует ли заявка и имеет ли статус pending
+        cur.execute("SELECT status FROM avatar_requests WHERE id = %s AND user_id = %s", (request_id, user_id))
+        row = cur.fetchone()
+        if not row:
+            raise HTTPException(status_code=404, detail="Заявка не найдена")
+        if row['status'] != 'pending':
+            raise HTTPException(status_code=400, detail="Заявка уже обработана, отмена невозможна")
+
+        # Удаляем заявку
+        cur.execute("DELETE FROM avatar_requests WHERE id = %s", (request_id,))
+
+        # Возвращаем фолиант в инвентарь
+        cur.execute("""
+            INSERT INTO inventory (user_id, item_id, quantity)
+            VALUES (%s, 'avatar_certificate', 1)
+            ON CONFLICT (user_id, item_id)
+            DO UPDATE SET quantity = inventory.quantity + 1
+        """, (user_id,))
+
+        conn.commit()
+        return {"success": True}
+    except Exception as e:
+        conn.rollback()
+        print(f"Ошибка отмены заявки: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
         cur.close()
         conn.close()
-        raise HTTPException(status_code=400, detail="Заявка не найдена или уже обработана")
-    
-    # Удаляем заявку
-    cur.execute("DELETE FROM avatar_requests WHERE id = %s", (request_id,))
-    
-    # Возвращаем фолиант в инвентарь
-    cur.execute("""
-        INSERT INTO inventory (user_id, item_id, quantity)
-        VALUES (%s, 'avatar_certificate', 1)
-        ON CONFLICT (user_id, item_id)
-        DO UPDATE SET quantity = inventory.quantity + 1
-    """, (user_id,))
-    
-    conn.commit()
-    cur.close()
-    conn.close()
-    return {"success": True}
 
 @app.get("/achievements/all")
 def get_all_achievements():
