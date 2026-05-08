@@ -252,8 +252,8 @@ def get_avatar_requests(user_id: str):
 #   Эндпоинт – обработка заявки (одобрить/отклонить):
 @app.post("/admin/avatar-review")
 def review_avatar(req: AvatarReviewRequest, admin_user_id: str):
-    #if not is_admin(admin_user_id):
-       # raise HTTPException(status_code=403, detail="Доступ запрещён")
+    # if not is_admin(admin_user_id):
+    #     raise HTTPException(status_code=403, detail="Доступ запрещён")
     print(f"✅ review_avatar вызван: request_id={req.request_id}, action={req.action}, admin={admin_user_id}")
     conn = get_db()
     cur = conn.cursor()
@@ -274,20 +274,19 @@ def review_avatar(req: AvatarReviewRequest, admin_user_id: str):
         print("=== APPROVE START ===")
         new_path = storage_path
         
-                # Перемещение файла из pending в approved (если файл существует)
+        # Перемещение файла из pending в approved (если файл существует)
         if storage_path and storage_path.startswith('pending/'):
             try:
-                # Проверяем, существует ли файл
                 supabase.storage.from_("avatars").download(storage_path)
                 new_path = storage_path.replace('pending/', 'approved/')
                 file_data = supabase.storage.from_("avatars").download(storage_path)
                 supabase.storage.from_("avatars").upload(new_path, file_data)
                 supabase.storage.from_("avatars").remove([storage_path])
-                storage_path = new_path  # обновляем путь для БД
+                storage_path = new_path
                 print(f"Файл перемещён в {new_path}")
             except Exception as e:
                 print(f"Не удалось переместить файл {storage_path}: {e}")
-                # не прерываем выполнение, оставляем как есть
+
         # 1. Добавляем аватар в библиотеку
         cur.execute("""
             INSERT INTO user_avatars (user_id, storage_path, is_active)
@@ -307,11 +306,11 @@ def review_avatar(req: AvatarReviewRequest, admin_user_id: str):
         cur.execute("UPDATE players SET approved_avatars_count = approved_avatars_count + 1 WHERE id = %s RETURNING approved_avatars_count", (user_id,))
         new_count = cur.fetchone()['approved_avatars_count']
         
-        # 4. Фиксируем все изменения в БД
+        # 4. Фиксируем изменения
         conn.commit()
         print("=== APPROVE DONE (commit) ===")
 
-        # ТЕПЕРЬ ВЫЗЫВАЕМ ДОСТИЖЕНИЯ И УВЕДОМЛЕНИЯ
+        # Выдаём достижения и уведомления
         grant_achievement_if_not_obtained(user_id, 'avatar_lover')
         if new_count >= 5:
             grant_achievement_if_not_obtained(user_id, 'avatar_lover_5')
@@ -324,6 +323,47 @@ def review_avatar(req: AvatarReviewRequest, admin_user_id: str):
 
         return {"success": True}
 
+    elif req.action == 'reject':
+        print("=== REJECT START ===")
+
+        # Удаляем файл из Storage, если он есть
+        if storage_path:
+            try:
+                supabase.storage.from_("avatars").remove([storage_path])
+                print(f"Файл {storage_path} удалён")
+            except Exception as e:
+                print(f"Не удалось удалить файл (пропускаем): {e}")
+        else:
+            print("Файл отсутствует, удаление пропущено")
+
+        # Обновляем статус заявки
+        cur.execute("""
+            UPDATE avatar_requests
+            SET status = 'rejected', reason = %s, reviewed_at = NOW()
+            WHERE id = %s
+        """, (req.reason, req.request_id))
+        print(f"Обновлено строк: {cur.rowcount}")
+
+        if cur.rowcount == 0:
+            print("Заявка не найдена или уже обработана")
+            conn.rollback()
+            raise HTTPException(status_code=400, detail="Заявка не найдена или уже обработана")
+
+        # Возвращаем фолиант
+        cur.execute("""
+            INSERT INTO inventory (user_id, item_id, quantity)
+            VALUES (%s, 'avatar_certificate', 1)
+            ON CONFLICT (user_id, item_id)
+            DO UPDATE SET quantity = inventory.quantity + 1
+        """, (user_id,))
+        print("Фолиант возвращён")
+
+        conn.commit()
+        print("=== REJECT DONE (commit) ===")
+        return {"success": True}
+
+    else:
+        raise HTTPException(status_code=400, detail="Неверное действие")
 
 @app.get("/")
 def root():
