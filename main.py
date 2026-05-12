@@ -102,6 +102,13 @@ class PlayerUpdate(BaseModel):
     coins: Optional[int] = None
     level: Optional[int] = None
 
+class StatsUpdate(BaseModel):
+    body: int
+    strength: int
+    agility: int
+    intellect: int
+    free_points: int
+
 # отмена загрузки аватара
 class CancelRequest(BaseModel):
     request_id: str
@@ -470,21 +477,20 @@ def update_player(user_id: str, update: PlayerUpdate):
             conn.commit()
             # ---- НОВЫЙ БЛОК: повышение уровня ---
             if new_level > current_level:
-                # Открываем отдельное соединение (можно и то же, но проще новое)
-                with get_db() as conn_stats:
-                    with conn_stats.cursor() as cur_stats:
-                        level_diff = new_level - current_level
-                        cur_stats.execute("""
-                            UPDATE player_stats
-                            SET max_hp = max_hp + %s,
-                                current_hp = max_hp + %s,
-                                max_mana = max_mana + %s,
-                                current_mana = max_mana + %s
-                            WHERE user_id = %s
-                        """, (level_diff * 10, level_diff * 10, level_diff * 10, level_diff * 10, user_id))
-                        conn_stats.commit()
-            # ------------------------------------
-            return updated
+              with get_db() as conn_stats:
+                with conn_stats.cursor() as cur_stats:
+                 level_diff = new_level - current_level
+                 cur_stats.execute("""
+                UPDATE player_stats
+                SET max_hp = max_hp + %s,
+                    current_hp = max_hp + %s,
+                    max_mana = max_mana + %s,
+                    current_mana = max_mana + %s,
+                    free_stat_points = free_stat_points + %s
+                WHERE user_id = %s
+            """, (level_diff * 10, level_diff * 10, level_diff * 10, level_diff * 10, level_diff * 2, user_id))
+            conn_stats.commit()
+        return updated
 
 # Библиотека аватаров, редактирование профиля.
 @app.get("/user-avatars/{user_id}")
@@ -867,12 +873,12 @@ def regen_energy_if_needed(user_id: str):
         
 @app.get("/player/stats/{user_id}")
 def get_player_stats(user_id: str):
-    # Сначала обновляем энергию
     regen_energy_if_needed(user_id)
     with get_db() as conn:
         with conn.cursor() as cur:
             cur.execute("""
-                SELECT current_hp, max_hp, current_mana, max_mana, current_energy, max_energy
+                SELECT current_hp, max_hp, current_mana, max_mana, current_energy, max_energy,
+                       body, strength, agility, intellect, free_stat_points
                 FROM player_stats
                 WHERE user_id = %s
             """, (user_id,))
@@ -881,7 +887,20 @@ def get_player_stats(user_id: str):
                 raise HTTPException(status_code=404, detail="Stats not found")
             return stats
         
-
+@app.post("/player/stats/update")
+def update_player_stats(user_id: str, update: StatsUpdate):
+    with get_db() as conn:
+        with conn.cursor() as cur:
+            if update.free_points < 0:
+                raise HTTPException(status_code=400, detail="Free points cannot be negative")
+            cur.execute("""
+                UPDATE player_stats
+                SET body = %s, strength = %s, agility = %s, intellect = %s, free_stat_points = %s
+                WHERE user_id = %s
+            """, (update.body, update.strength, update.agility, update.intellect, update.free_points, user_id))
+            conn.commit()
+            return {"success": True}
+        
 print("=== ALL ROUTES REGISTERED ===")
 
 
