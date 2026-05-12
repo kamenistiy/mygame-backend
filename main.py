@@ -475,22 +475,24 @@ def update_player(user_id: str, update: PlayerUpdate):
             )
             updated = cur.fetchone()
             conn.commit()
-            # ---- НОВЫЙ БЛОК: повышение уровня ---
+
+            # Если уровень повысился – обновляем характеристики
             if new_level > current_level:
-              with get_db() as conn_stats:
-                with conn_stats.cursor() as cur_stats:
-                 level_diff = new_level - current_level
-                 cur_stats.execute("""
-                UPDATE player_stats
-                SET max_hp = max_hp + %s,
-                    current_hp = max_hp + %s,
-                    max_mana = max_mana + %s,
-                    current_mana = max_mana + %s,
-                    free_stat_points = free_stat_points + %s
-                WHERE user_id = %s
-            """, (level_diff * 10, level_diff * 10, level_diff * 10, level_diff * 10, level_diff * 2, user_id))
-            conn_stats.commit()
-        return updated
+                with get_db() as conn_stats:
+                    with conn_stats.cursor() as cur_stats:
+                        level_diff = new_level - current_level
+                        cur_stats.execute("""
+                            UPDATE player_stats
+                            SET max_hp = max_hp + %s,
+                                current_hp = current_hp + %s,
+                                max_mana = max_mana + %s,
+                                current_mana = current_mana + %s,
+                                free_stat_points = free_stat_points + %s
+                            WHERE user_id = %s
+                        """, (level_diff * 10, level_diff * 10, level_diff * 10, level_diff * 10, level_diff * 2, user_id))
+                        conn_stats.commit()
+
+            return updated
 
 # Библиотека аватаров, редактирование профиля.
 @app.get("/user-avatars/{user_id}")
