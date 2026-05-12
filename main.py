@@ -80,9 +80,9 @@ def add_default_avatars_for_user(user_id: str):
             for path in avatars:
                 cur.execute("""
                     INSERT INTO user_avatars (user_id, storage_path, is_active, username)
-                    VALUES (%s, %s, false)
+                    VALUES (%s, %s, false, (SELECT username FROM players WHERE id = %s))
                     ON CONFLICT (user_id, storage_path) DO NOTHING
-                """, (user_id, path))
+                """, (user_id, path, user_id))
             conn.commit()
 
 def add_achievement_for_user(user_id: str, achievement_id: str):
@@ -302,10 +302,10 @@ def review_avatar(req: AvatarReviewRequest, admin_user_id: str):
 
         # 1. Добавляем аватар в библиотеку
         cur.execute("""
-            INSERT INTO user_avatars (user_id, storage_path, is_active, username)
-            VALUES (%s, %s, %s)
-            RETURNING id
-        """, (user_id, new_path, False))
+    INSERT INTO user_avatars (user_id, storage_path, is_active, username)
+    VALUES (%s, %s, %s, (SELECT username FROM players WHERE id = %s))
+    RETURNING id
+""", (user_id, new_path, False, user_id))
         avatar_id = cur.fetchone()['id']
         cur.execute("SELECT id FROM user_avatars WHERE user_id = %s AND is_active = true", (user_id,))
         active = cur.fetchone()
