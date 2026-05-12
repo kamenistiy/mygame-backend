@@ -786,7 +786,7 @@ def add_notification(user_id: str, notif_type: str, title: str, message: str):
             result = cur.fetchone()
             print(f"✅ Вставлено is_read = {result['is_read']}")
             conn.commit()
-            
+
 @app.get("/notifications/unread/count")
 def get_unread_count(user_id: str):
     with get_db() as conn:
@@ -797,6 +797,7 @@ def get_unread_count(user_id: str):
         
 @app.post("/notifications/mark_read")
 def mark_notifications_read(user_id: str, notification_ids: List[str] = None):
+    print(f"🔔 mark_notifications_read вызван для user_id={user_id}, ids={notification_ids}")
     with get_db() as conn:
         with conn.cursor() as cur:
             if notification_ids:
@@ -804,6 +805,7 @@ def mark_notifications_read(user_id: str, notification_ids: List[str] = None):
             else:
                 cur.execute("UPDATE notifications SET is_read = true WHERE user_id = %s AND expires_at > NOW()", (user_id,))
             conn.commit()
+            print(f"✅ Помечено прочитанными для {user_id}")
             return {"success": True}
         
 #Достижение с аватарами 1,5,10   
@@ -905,6 +907,7 @@ def update_player_stats(user_id: str, update: StatsUpdate):
             """, (update.body, update.strength, update.agility, update.intellect, update.free_points, user_id))
             conn.commit()
             return {"success": True}
+        
         
 print("=== ALL ROUTES REGISTERED ===")
 
