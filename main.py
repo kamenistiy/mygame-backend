@@ -11,6 +11,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from supabase import create_client
 from PIL import Image
 import io
+from datetime import datetime, timezone
 
 
 
@@ -467,6 +468,22 @@ def update_player(user_id: str, update: PlayerUpdate):
             )
             updated = cur.fetchone()
             conn.commit()
+            # ---- НОВЫЙ БЛОК: повышение уровня ---
+            if new_level > current_level:
+                # Открываем отдельное соединение (можно и то же, но проще новое)
+                with get_db() as conn_stats:
+                    with conn_stats.cursor() as cur_stats:
+                        level_diff = new_level - current_level
+                        cur_stats.execute("""
+                            UPDATE player_stats
+                            SET max_hp = max_hp + %s,
+                                current_hp = max_hp + %s,
+                                max_mana = max_mana + %s,
+                                current_mana = max_mana + %s
+                            WHERE user_id = %s
+                        """, (level_diff * 10, level_diff * 10, level_diff * 10, level_diff * 10, user_id))
+                        conn_stats.commit()
+            # ------------------------------------
             return updated
 
 # Библиотека аватаров, редактирование профиля.
@@ -823,8 +840,48 @@ def grant_achievement_if_not_obtained(user_id: str, achievement_id: str):
                              f'Награда: +{reward["exp_reward"]} опыта, +{reward["coins_reward"]} монет.')
             return True
         
-
+def regen_energy_if_needed(user_id: str):
+    """Проверяет, сколько прошло времени с last_energy_regen, и добавляет +1 энергии за каждые 10 минут."""
+    with get_db() as conn:
+        with conn.cursor() as cur:
+            cur.execute("SELECT current_energy, max_energy, last_energy_regen FROM player_stats WHERE user_id = %s", (user_id,))
+            stats = cur.fetchone()
+            if not stats:
+                return
+            now = datetime.now(timezone.utc)
+            last = stats['last_energy_regen']
+            if last.tzinfo is None:
+                last = last.replace(tzinfo=timezone.utc)
+            diff_seconds = (now - last).total_seconds()
+            minutes_passed = diff_seconds // 600  # 10 минут = 600 секунд
+            if minutes_passed <= 0:
+                return
+            new_energy = min(stats['current_energy'] + int(minutes_passed), stats['max_energy'])
+            if new_energy != stats['current_energy']:
+                cur.execute("""
+                    UPDATE player_stats
+                    SET current_energy = %s, last_energy_regen = NOW()
+                    WHERE user_id = %s
+                """, (new_energy, user_id))
+                conn.commit()
         
+@app.get("/player/stats/{user_id}")
+def get_player_stats(user_id: str):
+    # Сначала обновляем энергию
+    regen_energy_if_needed(user_id)
+    with get_db() as conn:
+        with conn.cursor() as cur:
+            cur.execute("""
+                SELECT current_hp, max_hp, current_mana, max_mana, current_energy, max_energy
+                FROM player_stats
+                WHERE user_id = %s
+            """, (user_id,))
+            stats = cur.fetchone()
+            if not stats:
+                raise HTTPException(status_code=404, detail="Stats not found")
+            return stats
+        
+
 print("=== ALL ROUTES REGISTERED ===")
 
 
