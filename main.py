@@ -98,7 +98,7 @@ def add_achievement_for_user(user_id: str, achievement_id: str):
 # --- Модели данных ---
 class PlayerUpdate(BaseModel):
     exp: Optional[int] = None
-    gold: Optional[int] = None
+    coins: Optional[int] = None
     level: Optional[int] = None
 
 # отмена загрузки аватара
@@ -410,7 +410,7 @@ def get_player(user_id: str):
 
                 # 2. Создаём запись в таблице players
                 cur.execute("""
-                    INSERT INTO players (id, username, level, exp, gold, created_at)
+                    INSERT INTO players (id, username, level, exp, coins, created_at)
                     VALUES (%s, %s, 1, 0, 0, NOW())
                     RETURNING *
                 """, (user_id, username))
@@ -443,11 +443,11 @@ def update_player(user_id: str, update: PlayerUpdate):
 
             # Текущие значения
             current_exp = player["exp"]
-            current_gold = player["gold"]
+            current_coins = player["coins"]
             current_level = player["level"]
 
-            # Новое золото
-            new_gold = current_gold if update.gold is None else update.gold
+            # Новые монеты
+            new_coins = current_coins if update.coins is None else update.coins
 
             # Обработка опыта (с повышением уровня)
             new_level = current_level
@@ -462,8 +462,8 @@ def update_player(user_id: str, update: PlayerUpdate):
 
             # Обновление в БД
             cur.execute(
-                "UPDATE players SET exp = %s, gold = %s, level = %s WHERE id = %s RETURNING *",
-                (new_exp, new_gold, new_level, user_id)
+                "UPDATE players SET exp = %s, coins = %s, level = %s WHERE id = %s RETURNING *",
+                (new_exp, new_coins, new_level, user_id)
             )
             updated = cur.fetchone()
             conn.commit()
@@ -515,7 +515,7 @@ def update_profile(req: dict):
 def list_players():
     conn = get_db()
     cur = conn.cursor()
-    cur.execute("SELECT id, serial_number, username, level, exp, gold, created_at FROM players")
+    cur.execute("SELECT id, serial_number, username, level, exp, coins, created_at FROM players")
     players = cur.fetchall()
     cur.execute("SELECT COUNT(*) FROM players")
     total = cur.fetchone()['count']
@@ -655,7 +655,7 @@ def cancel_avatar_request(req: CancelRequest):
 def get_all_achievements():
     conn = get_db()
     cur = conn.cursor()
-    cur.execute("SELECT id, name, description, icon, max_progress, exp_reward, gold_reward FROM achievements ORDER BY id")
+    cur.execute("SELECT id, name, description, icon, max_progress, exp_reward, coins_reward FROM achievements ORDER BY id")
     rows = cur.fetchall()
     cur.close()
     conn.close()
@@ -720,7 +720,7 @@ def update_achievement_progress(req: dict):
     cur.execute("UPDATE user_achievements SET current_progress = %s WHERE user_id = %s AND achievement_id = %s", (new_progress, user_id, achievement_id))
     if new_progress >= max_prog and not row['is_unlocked']:
         cur.execute("UPDATE user_achievements SET is_unlocked = true, unlocked_at = NOW() WHERE user_id = %s AND achievement_id = %s", (user_id, achievement_id))
-        # Можно добавить выдачу награды (опыт, золото)
+        # Можно добавить выдачу награды (опыт, монеты)
     conn.commit()
     cur.close()
     conn.close()
@@ -784,7 +784,7 @@ def grant_achievement_if_not_obtained(user_id: str, achievement_id: str):
     with get_db() as conn:
         with conn.cursor() as cur:
             cur.execute("SET statement_timeout = 0")
-            cur.execute("SELECT name, exp_reward, gold_reward FROM achievements WHERE id = %s", (achievement_id,))
+            cur.execute("SELECT name, exp_reward, coins_reward FROM achievements WHERE id = %s", (achievement_id,))
             reward = cur.fetchone()
             if not reward:
                 print(f"  ❌ Достижение {achievement_id} не найдено")
@@ -801,7 +801,7 @@ def grant_achievement_if_not_obtained(user_id: str, achievement_id: str):
                 return False
 
             # Обновляем золото
-            cur.execute("UPDATE players SET gold = gold + %s WHERE id = %s", (reward['gold_reward'], user_id))
+            cur.execute("UPDATE players SET coins = coins + %s WHERE id = %s", (reward['coins_reward'], user_id))
             
             # Обновляем опыт и уровень 
             cur.execute("SELECT exp, level FROM players WHERE id = %s", (user_id,))
@@ -816,11 +816,11 @@ def grant_achievement_if_not_obtained(user_id: str, achievement_id: str):
             cur.execute("UPDATE players SET exp = %s, level = %s WHERE id = %s", (exp_rem, new_level, user_id))
             
             conn.commit()
-            print(f"  ✅ Награды выданы: +{reward['exp_reward']} опыта, +{reward['gold_reward']} золота, уровень {level} -> {new_level}")
+            print(f"  ✅ Награды выданы: +{reward['exp_reward']} опыта, +{reward['coins_reward']} монет, уровень {level} -> {new_level}")
             
             # Уведомление
             add_notification(user_id, 'achievement', f'Достижение "{reward["name"]}" получено!',
-                             f'Награда: +{reward["exp_reward"]} опыта, +{reward["gold_reward"]} золота.')
+                             f'Награда: +{reward["exp_reward"]} опыта, +{reward["coins_reward"]} монет.')
             return True
         
 
