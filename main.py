@@ -779,9 +779,12 @@ def add_notification(user_id: str, notif_type: str, title: str, message: str):
     with get_db() as conn:
         with conn.cursor() as cur:
             cur.execute("""
-    INSERT INTO notifications (user_id, type, title, message, expires_at, is_read)
-    VALUES (%s, %s, %s, %s, NOW() + INTERVAL '1 year', false)
-""", (user_id, notif_type, title, message))
+                INSERT INTO notifications (user_id, type, title, message, expires_at, is_read)
+                VALUES (%s, %s, %s, %s, NOW() + INTERVAL '1 year', false)
+                RETURNING is_read
+            """, (user_id, notif_type, title, message))
+            result = cur.fetchone()
+            print(f"✅ Вставлено is_read = {result['is_read']}")
             conn.commit()
             
 @app.get("/notifications/unread/count")
