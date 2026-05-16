@@ -209,7 +209,7 @@ def use_item(user_id: str, req: UseItemRequest):
     if item['type'] != 'consumable':
         raise HTTPException(status_code=400, detail="Этот предмет нельзя использовать")
 
-    # 2. Специальная логика для фолианта
+    # 2. Специальная логика для фолианта смены Образа (загрузки нового аватара)
     if req.item_id == 'avatar_certificate':
         # Проверяем, нет ли уже активной заявки
         cur.execute("SELECT id FROM avatar_requests WHERE user_id = %s AND status = 'pending'", (user_id,))
@@ -238,6 +238,49 @@ def use_item(user_id: str, req: UseItemRequest):
         cur.close()
         conn.close()
         return {"success": True, "request_id": new_request['id']}
+
+
+ # 3. Специальная логика для фолианта смены Пути (перераспределение статов за лвл)
+    if req.item_id == 'stats_certificate':
+        # Создаём отдельное соединение для операций с БД
+        with get_db() as conn2:
+            with conn2.cursor() as cur2:
+                # Получаем уровень игрока и текущие статы
+                cur2.execute("""
+                    SELECT p.level, ps.body, ps.strength, ps.agility, ps.intellect, ps.free_stat_points
+                    FROM players p
+                    JOIN player_stats ps ON p.id = ps.user_id
+                    WHERE p.id = %s
+                """, (user_id,))
+                player_stats = cur2.fetchone()
+                if not player_stats:
+                    raise HTTPException(status_code=404, detail="Player not found")
+                
+                level = player_stats['level']
+                # Очки за уровень: на 1 уровне 2, на каждом следующем +2
+                correct_free_points = (level - 1) * 2 + 2
+                
+                # Сбрасываем характеристики
+                cur2.execute("""
+                    UPDATE player_stats
+                    SET body = 0, strength = 0, agility = 0, intellect = 0,
+                        free_stat_points = %s
+                    WHERE user_id = %s
+                """, (correct_free_points, user_id))
+                conn2.commit()
+        
+        # Пересчитываем производные (max_hp, pat, mat и т.д.)
+        recalc_derived_stats(user_id)
+        
+        # Удаляем один предмет из инвентаря
+        removed = remove_item_from_inventory(user_id, req.item_id, req.quantity)
+        if not removed:
+            raise HTTPException(status_code=400, detail="Недостаточно предметов в инвентаре")
+        
+        add_notification(user_id, 'system', 'Очки характеристик сброшены', 
+                         f'Вы использовали Фолиант смены Пути. Все вложенные очки сброшены, у вас {correct_free_points} свободных очков для распределения.')
+        
+        return {"success": True, "message": "Очки характеристик сброшены"}
 
     # Если предмет не фолиант (пока не реализовано)
     raise HTTPException(status_code=400, detail="Использование этого предмета ещё не реализовано")
