@@ -905,7 +905,7 @@ def recalc_derived_stats(user_id: str):
             pdf = body * 5
             mdf = body * 5
             awr = body * 5              # 0.5% за очко
-            spd = max(0, agility * 10 - body * 5)   # 1% за ловкость, -0.5% за телосложение
+            spd = agility * 10 - body * 5    # 1% за ловкость, -0.5% за телосложение
             acc = agility * 5
             ddg = agility * 5
             gat = strength * 5          # 0.5% за очко
