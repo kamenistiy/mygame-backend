@@ -885,7 +885,11 @@ def get_player_stats(user_id: str):
         with conn.cursor() as cur:
             cur.execute("""
                 SELECT current_hp, max_hp, current_mana, max_mana, current_energy, max_energy,
-                       body, strength, agility, intellect, free_stat_points
+                       body, strength, agility, intellect, free_stat_points,
+                       pdf, mdf, pat, mat, ddg, acc, sp,
+                       crft, spd, gat, awr,
+                       fame, rep, ins,
+                       pvp, pve, unic, zone
                 FROM player_stats
                 WHERE user_id = %s
             """, (user_id,))
