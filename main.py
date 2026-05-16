@@ -164,7 +164,7 @@ def get_inventory(user_id: str):
     conn = get_db()
     cur = conn.cursor()
     cur.execute("""
-        SELECT i.id, i.name, i.description, i.type, i.class, i.icon, inv.quantity,
+        SELECT i.id, i.name, i.description, i.class, i.icon, inv.quantity,
                i.rarity, i.level, i.strength, i.agility, i.intellect, i.body
         FROM inventory inv
         JOIN items i ON inv.item_id = i.id
@@ -206,7 +206,7 @@ def use_item(user_id: str, req: UseItemRequest):
     item = cur.fetchone()
     if not item:
         raise HTTPException(status_code=404, detail="Предмет не найден")
-    if item['type'] != 'consumable':
+    if item['class'] != 'consumable':
         raise HTTPException(status_code=400, detail="Этот предмет нельзя использовать")
 
     # 2. Специальная логика для фолианта смены Образа (загрузки нового аватара)
