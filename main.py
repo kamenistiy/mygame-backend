@@ -435,7 +435,7 @@ def get_player(user_id: str):
                     'Вы получили 10 стартовых Аватаров! Применить их можно во вкладке "Профиль", нажав на значок шестерни.')
                 add_notification(user_id, 'achievement', 'Благодарность', 
                     'Вы получили достижение "Благодарность" за участие в альфа-тесте.')
-                
+                recalc_derived_stats(user_id)
                 return player
    
 
@@ -491,7 +491,7 @@ def update_player(user_id: str, update: PlayerUpdate):
                             WHERE user_id = %s
                         """, (level_diff * 10, level_diff * 10, level_diff * 10, level_diff * 10, level_diff * 2, user_id))
                         conn_stats.commit()
-
+                        recalc_derived_stats(user_id)
             return updated
 
 # Библиотека аватаров, редактирование профиля.
@@ -878,6 +878,64 @@ def regen_energy_if_needed(user_id: str):
                 """, (new_energy, user_id))
                 conn.commit()
         
+def recalc_derived_stats(user_id: str):
+    """Пересчитывает производные характеристики на основе level, body, strength, agility, intellect."""
+    with get_db() as conn:
+        with conn.cursor() as cur:
+            cur.execute("""
+                SELECT p.level, ps.body, ps.strength, ps.agility, ps.intellect
+                FROM players p
+                JOIN player_stats ps ON p.id = ps.user_id
+                WHERE p.id = %s
+            """, (user_id,))
+            row = cur.fetchone()
+            if not row:
+                return
+            level = row['level']
+            body = row['body']
+            strength = row['strength']
+            agility = row['agility']
+            intellect = row['intellect']
+            
+            max_hp = 100 + (level - 1) * 10 + body * 10
+            max_mana = 100 + (level - 1) * 10 + intellect * 10
+            pat = strength * 5
+            mat = intellect * 5
+            sp = intellect * 5          # 0.5% за очко => 5 = 0.5%
+            pdf = body * 5
+            mdf = body * 5
+            awr = body * 5              # 0.5% за очко
+            spd = max(0, agility * 10 - body * 5)   # 1% за ловкость, -0.5% за телосложение
+            acc = agility * 5
+            ddg = agility * 5
+            gat = strength * 5          # 0.5% за очко
+            
+            cur.execute("""
+                UPDATE player_stats
+                SET max_hp = %s,
+                    max_mana = %s,
+                    pat = %s,
+                    mat = %s,
+                    sp = %s,
+                    pdf = %s,
+                    mdf = %s,
+                    awr = %s,
+                    spd = %s,
+                    acc = %s,
+                    ddg = %s,
+                    gat = %s
+                WHERE user_id = %s
+            """, (max_hp, max_mana, pat, mat, sp, pdf, mdf, awr, spd, acc, ddg, gat, user_id))
+            
+            # Корректируем текущие HP/Mana, если они превышают новые максимумы
+            cur.execute("""
+                UPDATE player_stats
+                SET current_hp = LEAST(current_hp, max_hp),
+                    current_mana = LEAST(current_mana, max_mana)
+                WHERE user_id = %s
+            """, (user_id,))
+            conn.commit()
+
 @app.get("/player/stats/{user_id}")
 def get_player_stats(user_id: str):
     regen_energy_if_needed(user_id)
@@ -902,15 +960,17 @@ def get_player_stats(user_id: str):
 def update_player_stats(user_id: str, update: StatsUpdate):
     with get_db() as conn:
         with conn.cursor() as cur:
-            if update.free_points < 0:
-                raise HTTPException(status_code=400, detail="Free points cannot be negative")
             cur.execute("""
                 UPDATE player_stats
                 SET body = %s, strength = %s, agility = %s, intellect = %s, free_stat_points = %s
                 WHERE user_id = %s
             """, (update.body, update.strength, update.agility, update.intellect, update.free_points, user_id))
+            if cur.rowcount == 0:
+                raise HTTPException(status_code=404, detail="Player stats not found")
             conn.commit()
-            return {"success": True}
+    # Пересчитываем производные
+    recalc_derived_stats(user_id)
+    return {"success": True}
         
         
 print("=== ALL ROUTES REGISTERED ===")
