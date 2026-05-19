@@ -197,6 +197,18 @@ def add_item(user_id: str, req: AddItemRequest):
         cur.close()
         conn.close()
 
+# ========== УДАЛЕНИЕ ПРЕДМЕТА ИЗ ИНВЕНТАРЯ ==========
+class RemoveItemRequest(BaseModel):
+    item_id: str
+    quantity: int = 1
+
+@app.post("/inventory/remove")
+def remove_item(user_id: str, req: RemoveItemRequest):
+    removed = remove_item_from_inventory(user_id, req.item_id, req.quantity)
+    if not removed:
+        raise HTTPException(status_code=400, detail="Недостаточно предметов или предмет не найден")
+    return {"success": True}
+
 @app.post("/item/use")
 def use_item(user_id: str, req: UseItemRequest):
     # 1. Проверяем существование предмета и его тип
