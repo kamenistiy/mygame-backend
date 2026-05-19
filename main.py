@@ -297,6 +297,58 @@ def use_item(user_id: str, req: UseItemRequest):
     # Если предмет не фолиант (пока не реализовано)
     raise HTTPException(status_code=400, detail="Использование этого предмета ещё не реализовано")
 
+@app.get("/inventory/junk/{user_id}")
+def get_junk_inventory(user_id: str):
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute("""
+        SELECT i.id, i.name, i.description, i.icon, j.quantity, i.rarity, i.level
+        FROM junk_inventory j
+        JOIN items i ON j.item_id = i.id
+        WHERE j.user_id = %s
+    """, (user_id,))
+    items = cur.fetchall()
+    cur.close()
+    conn.close()
+    return items
+
+class MoveToJunkRequest(BaseModel):
+    item_id: str
+    quantity: int = 1
+
+@app.post("/inventory/move_to_junk")
+def move_to_junk(user_id: str, req: MoveToJunkRequest):
+    conn = get_db()
+    cur = conn.cursor()
+    try:
+        # 1. Уменьшаем количество в обычном инвентаре
+        cur.execute("SELECT quantity FROM inventory WHERE user_id = %s AND item_id = %s", (user_id, req.item_id))
+        row = cur.fetchone()
+        if not row or row['quantity'] < req.quantity:
+            raise HTTPException(status_code=400, detail="Недостаточно предметов")
+        new_qty = row['quantity'] - req.quantity
+        if new_qty == 0:
+            cur.execute("DELETE FROM inventory WHERE user_id = %s AND item_id = %s", (user_id, req.item_id))
+        else:
+            cur.execute("UPDATE inventory SET quantity = %s WHERE user_id = %s AND item_id = %s", (new_qty, user_id, req.item_id))
+        
+        # 2. Добавляем в junk_inventory
+        cur.execute("""
+            INSERT INTO junk_inventory (user_id, item_id, quantity)
+            VALUES (%s, %s, %s)
+            ON CONFLICT (user_id, item_id)
+            DO UPDATE SET quantity = junk_inventory.quantity + EXCLUDED.quantity
+        """, (user_id, req.item_id, req.quantity))
+        
+        conn.commit()
+        return {"success": True}
+    except Exception as e:
+        conn.rollback()
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        cur.close()
+        conn.close()
+
 # --- Эндпоинты ---
 
 # Эндпоинт – получение списка заявок (только для админа):
