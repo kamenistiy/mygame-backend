@@ -56,16 +56,20 @@ def required_exp(level: int) -> int:
 
 def get_db():
     max_retries = 3
+
     for i in range(max_retries):
         try:
             conn = psycopg2.connect(
                 DB_URL,
                 cursor_factory=RealDictCursor,
+                sslmode="require"
             )
             return conn
+
         except OperationalError as e:
             if i == max_retries - 1:
                 raise
+
             print(f"Попытка {i+1} не удалась: {e}")
             time.sleep(2 ** i)
 
