@@ -23,6 +23,10 @@ def is_valid_uuid(uuid_str: str) -> bool:
         return False
     
 print("=== STARTING APP ===")
+print("STEP 1")
+supabase = create_client(SUPABASE_URL, SUPABASE_SERVICE_KEY)
+print("STEP 2")
+
 
 app = FastAPI()
 
