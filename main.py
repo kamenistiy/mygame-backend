@@ -165,7 +165,8 @@ def get_inventory(user_id: str):
     cur = conn.cursor()
     cur.execute("""
         SELECT i.id, i.name, i.description, i.class, i.icon, inv.quantity,
-               i.rarity, i.level, i.strength, i.agility, i.intellect, i.body
+            i.rarity, i.level, i.strength, i.agility, i.intellect, i.body,
+            i.price
         FROM inventory inv
         JOIN items i ON inv.item_id = i.id
         WHERE inv.user_id = %s
@@ -302,7 +303,7 @@ def get_junk_inventory(user_id: str):
     conn = get_db()
     cur = conn.cursor()
     cur.execute("""
-        SELECT i.id, i.name, i.description, i.icon, j.quantity, i.rarity, i.level
+        SELECT i.id, i.name, i.description, i.icon, j.quantity, i.rarity, i.level, i.price
         FROM junk_inventory j
         JOIN items i ON j.item_id = i.id
         WHERE j.user_id = %s
