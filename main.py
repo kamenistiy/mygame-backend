@@ -7,6 +7,7 @@ from psycopg2.extras import RealDictCursor
 from typing import Optional, List
 import os
 import uuid
+from uuid import UUID
 from fastapi.middleware.cors import CORSMiddleware
 from supabase import create_client
 from PIL import Image
@@ -14,7 +15,13 @@ import io
 from datetime import datetime, timezone
 
 
-
+def is_valid_uuid(uuid_str: str) -> bool:
+    try:
+        UUID(uuid_str)
+        return True
+    except ValueError:
+        return False
+    
 print("=== STARTING APP ===")
 
 app = FastAPI()
@@ -743,6 +750,10 @@ def get_user_avatar(user_id: str):
     
 @app.get("/my-avatar-requests")
 def get_my_requests(user_id: str):
+    try:
+        UUID(user_id)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid user_id format")
     conn = get_db()
     cur = conn.cursor()
     cur.execute("""
