@@ -1,6 +1,7 @@
 fastapi
-uvicorn
-python-multipart
+uvicorn[standard]
 psycopg2-binary
+python-multipart
 supabase
-Pillow>=10.0.0
+pillow
+pydantic
