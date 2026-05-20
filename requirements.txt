@@ -1,7 +1,8 @@
-fastapi
-uvicorn[standard]
-psycopg2-binary
-python-multipart
-supabase
-pillow
-pydantic
+fastapi==0.115.0
+uvicorn[standard]==0.30.6
+psycopg2-binary==2.9.9
+python-multipart==0.0.9
+supabase==2.7.4
+pillow==10.4.0
+pydantic==2.9.2
+httpx==0.27.2
