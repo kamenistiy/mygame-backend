@@ -14,7 +14,11 @@ from PIL import Image
 import io
 from datetime import datetime, timezone
 
+from fastapi import FastAPI
 from routers.inventory import router as inventory_router
+
+app = FastAPI()
+
 app.include_router(inventory_router)
 
 def is_valid_uuid(uuid_str: str) -> bool:
@@ -30,7 +34,6 @@ supabase = create_client(SUPABASE_URL, SUPABASE_SERVICE_KEY)
 print("STEP 2")
 
 
-app = FastAPI()
 
 # CORS
 app.add_middleware(
