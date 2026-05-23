@@ -14,6 +14,8 @@ from PIL import Image
 import io
 from datetime import datetime, timezone
 
+from routers.inventory import router as inventory_router
+app.include_router(inventory_router)
 
 def is_valid_uuid(uuid_str: str) -> bool:
     try:
@@ -164,6 +166,7 @@ def remove_item_from_inventory(user_id: str, item_id: str, quantity: int = 1) ->
     finally:
         cur.close()
         conn.close()
+
 # ========== Вспомогательная функция – проверка, является ли пользователь админом: ==========
 def is_admin(user_id: str) -> bool:
     conn = get_db()
