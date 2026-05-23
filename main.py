@@ -45,9 +45,11 @@ app.add_middleware(
 
 import os
 
-SUPABASE_URL = os.environ.get("SUPABASE_URL")
-SUPABASE_SERVICE_KEY = os.environ.get("SUPABASE_SERVICE_KEY")
-DB_URL = os.environ.get("DB_URL")
+from core.config import (
+    SUPABASE_URL,
+    SUPABASE_SERVICE_KEY,
+    DB_URL
+)
 
 import time
 import logging
