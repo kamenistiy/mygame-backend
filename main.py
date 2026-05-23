@@ -16,6 +16,8 @@ from datetime import datetime, timezone
 
 from fastapi import FastAPI
 from routers.inventory import router as inventory_router
+from routers.notifications import router as notifications_router
+
 
 from core.config import (
     SUPABASE_URL,
@@ -26,6 +28,7 @@ from core.config import (
 app = FastAPI()
 
 app.include_router(inventory_router)
+app.include_router(notifications_router)
 
 def is_valid_uuid(uuid_str: str) -> bool:
     try:
@@ -49,7 +52,6 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-import os
 import time
 import logging
 from psycopg2 import OperationalError
@@ -180,57 +182,14 @@ def is_admin(user_id: str) -> bool:
     cur.close()
     conn.close()
     return row and row['is_admin'] == True
-# ========== ЭНДПОИНТЫ ==========
-@app.get("/inventory/{user_id}")
-def get_inventory(user_id: str):
-    conn = get_db()
-    cur = conn.cursor()
-    cur.execute("""
-        SELECT i.id, i.name, i.description, i.class, i.icon, inv.quantity,
-            i.rarity, i.level, i.strength, i.agility, i.intellect, i.body,
-            i.price
-        FROM inventory inv
-        JOIN items i ON inv.item_id = i.id
-        WHERE inv.user_id = %s
-    """, (user_id,))
-    items = cur.fetchall()
-    cur.close()
-    conn.close()
-    return items
 
-@app.post("/inventory/add")
-def add_item(user_id: str, req: AddItemRequest):
-    conn = get_db()
-    cur = conn.cursor()
-    try:
-        cur.execute("""
-            INSERT INTO inventory (user_id, item_id, quantity)
-            VALUES (%s, %s, %s)
-            ON CONFLICT (user_id, item_id)
-            DO UPDATE SET quantity = inventory.quantity + EXCLUDED.quantity
-            RETURNING *
-        """, (user_id, req.item_id, req.quantity))
-        result = cur.fetchone()
-        conn.commit()
-        return {"success": True, "item": result}
-    except Exception as e:
-        conn.rollback()
-        raise HTTPException(status_code=500, detail=str(e))
-    finally:
-        cur.close()
-        conn.close()
+
 
 # ========== УДАЛЕНИЕ ПРЕДМЕТА ИЗ ИНВЕНТАРЯ ==========
 class RemoveItemRequest(BaseModel):
     item_id: str
     quantity: int = 1
 
-@app.post("/inventory/remove")
-def remove_item(user_id: str, req: RemoveItemRequest):
-    removed = remove_item_from_inventory(user_id, req.item_id, req.quantity)
-    if not removed:
-        raise HTTPException(status_code=400, detail="Недостаточно предметов или предмет не найден")
-    return {"success": True}
 
 @app.post("/item/use")
 def use_item(user_id: str, req: UseItemRequest):
@@ -339,38 +298,7 @@ class MoveToJunkRequest(BaseModel):
     item_id: str
     quantity: int = 1
 
-@app.post("/inventory/move_to_junk")
-def move_to_junk(user_id: str, req: MoveToJunkRequest):
-    conn = get_db()
-    cur = conn.cursor()
-    try:
-        # 1. Уменьшаем количество в обычном инвентаре
-        cur.execute("SELECT quantity FROM inventory WHERE user_id = %s AND item_id = %s", (user_id, req.item_id))
-        row = cur.fetchone()
-        if not row or row['quantity'] < req.quantity:
-            raise HTTPException(status_code=400, detail="Недостаточно предметов")
-        new_qty = row['quantity'] - req.quantity
-        if new_qty == 0:
-            cur.execute("DELETE FROM inventory WHERE user_id = %s AND item_id = %s", (user_id, req.item_id))
-        else:
-            cur.execute("UPDATE inventory SET quantity = %s WHERE user_id = %s AND item_id = %s", (new_qty, user_id, req.item_id))
-        
-        # 2. Добавляем в junk_inventory
-        cur.execute("""
-            INSERT INTO junk_inventory (user_id, item_id, quantity)
-            VALUES (%s, %s, %s)
-            ON CONFLICT (user_id, item_id)
-            DO UPDATE SET quantity = junk_inventory.quantity + EXCLUDED.quantity
-        """, (user_id, req.item_id, req.quantity))
-        
-        conn.commit()
-        return {"success": True}
-    except Exception as e:
-        conn.rollback()
-        raise HTTPException(status_code=500, detail=str(e))
-    finally:
-        cur.close()
-        conn.close()
+
 
 # --- Эндпоинты ---
 
@@ -886,28 +814,6 @@ def update_achievement_progress(req: dict):
     return {"success": True}
 
         
-@app.get("/notifications")
-def get_notifications(user_id: str, type_filter: str = 'all', search: str = '', limit: int = 100):
-    with get_db() as conn:
-        with conn.cursor() as cur:
-            query = """
-                SELECT id, type, title, message, created_at, is_read
-                FROM notifications
-                WHERE user_id = %s AND expires_at > NOW()
-            """
-            params = [user_id]
-            if type_filter != 'all':
-                query += " AND type = %s"
-                params.append(type_filter)
-            if search:
-                query += " AND (title ILIKE %s OR message ILIKE %s)"
-                params.extend([f'%{search}%', f'%{search}%'])
-            query += " ORDER BY created_at DESC LIMIT %s"
-            params.append(limit)
-            cur.execute(query, params)
-            rows = cur.fetchall()
-            return rows
-        
 def add_notification(user_id: str, notif_type: str, title: str, message: str):
     print(f"📢 add_notification: {title} для {user_id}")
     with get_db() as conn:
@@ -921,26 +827,7 @@ def add_notification(user_id: str, notif_type: str, title: str, message: str):
             print(f"✅ Вставлено is_read = {result['is_read']}")
             conn.commit()
 
-@app.get("/notifications/unread/count")
-def get_unread_count(user_id: str):
-    with get_db() as conn:
-        with conn.cursor() as cur:
-            cur.execute("SELECT COUNT(*) FROM notifications WHERE user_id = %s AND is_read = false AND expires_at > NOW()", (user_id,))
-            count = cur.fetchone()['count']
-            return {"unread_count": count}
-        
-@app.post("/notifications/mark_read")
-def mark_notifications_read(user_id: str, notification_ids: List[str] = None):
-    print(f"🔔 mark_notifications_read вызван для user_id={user_id}, ids={notification_ids}")
-    with get_db() as conn:
-        with conn.cursor() as cur:
-            if notification_ids:
-                cur.execute("UPDATE notifications SET is_read = true WHERE user_id = %s AND id = ANY(%s)", (user_id, notification_ids))
-            else:
-                cur.execute("UPDATE notifications SET is_read = true WHERE user_id = %s AND expires_at > NOW()", (user_id,))
-            conn.commit()
-            print(f"✅ Помечено прочитанными для {user_id}")
-            return {"success": True}
+
         
 #Достижение с аватарами 1,5,10   
 def grant_achievement_if_not_obtained(user_id: str, achievement_id: str):
