@@ -17,6 +17,12 @@ from datetime import datetime, timezone
 from fastapi import FastAPI
 from routers.inventory import router as inventory_router
 
+from core.config import (
+    SUPABASE_URL,
+    SUPABASE_SERVICE_KEY,
+    DB_URL
+)
+
 app = FastAPI()
 
 app.include_router(inventory_router)
@@ -44,13 +50,6 @@ app.add_middleware(
 )
 
 import os
-
-from core.config import (
-    SUPABASE_URL,
-    SUPABASE_SERVICE_KEY,
-    DB_URL
-)
-
 import time
 import logging
 from psycopg2 import OperationalError
