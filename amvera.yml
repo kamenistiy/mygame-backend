@@ -12,5 +12,5 @@ run:
   image: null
   command: ""
   args: null
-  containerPort: 8000
+  containerPort: 8080
   servicePort: 80
