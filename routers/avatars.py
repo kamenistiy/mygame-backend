@@ -7,6 +7,8 @@ import uuid
 from core.db import get_db
 from core.config import SUPABASE_URL, SUPABASE_SERVICE_KEY
 from supabase import create_client
+from fastapi import Depends
+from services.auth_service import get_admin_user
 
 
 supabase = create_client(SUPABASE_URL, SUPABASE_SERVICE_KEY)
@@ -160,9 +162,7 @@ def cancel_avatar_request(req: CancelRequest):
 
 # Эндпоинт – получение списка заявок (только для админа):
 @router.get("/admin/avatar-requests")
-def get_avatar_requests(user_id: str):
-    if not is_admin(user_id):
-        raise HTTPException(status_code=403, detail="Доступ запрещён")
+def get_avatar_requests(user_id: str = Depends(get_admin_user)):
     conn = get_db()
     cur = conn.cursor()
     cur.execute("""
@@ -178,7 +178,10 @@ def get_avatar_requests(user_id: str):
 
 #   Эндпоинт – обработка заявки (одобрить/отклонить):
 @router.post("/admin/avatar-review")
-def review_avatar(req: AvatarReviewRequest, admin_user_id: str):
+def review_avatar(
+    req: AvatarReviewRequest,
+    admin_user_id: str = Depends(get_admin_user)
+):
     # if not is_admin(admin_user_id):
     #     raise HTTPException(status_code=403, detail="Доступ запрещён")
     print(f"✅ review_avatar вызван: request_id={req.request_id}, action={req.action}, admin={admin_user_id}")

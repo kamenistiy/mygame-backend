@@ -7,16 +7,7 @@ def required_exp(level: int) -> int:
         return 20
     return 20 * (2 ** (level - 1))
 
-# ========== Проверка, является ли пользователь админом: ==========
 
-def is_admin(user_id: str) -> bool:
-    conn = get_db()
-    cur = conn.cursor()
-    cur.execute("SELECT is_admin FROM players WHERE id = %s", (user_id,))
-    row = cur.fetchone()
-    cur.close()
-    conn.close()
-    return row and row['is_admin'] == True
 
 def regen_energy_if_needed(user_id: str):
     with get_db() as conn:
