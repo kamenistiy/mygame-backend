@@ -4,6 +4,8 @@ from typing import Optional
 from core.db import get_db
 from services.player_service import regen_energy_if_needed
 from services.player_service import add_default_avatars_for_user
+from services.achievement_service import add_achievement_for_user
+from core.supabase_client import supabase
 
 router = APIRouter()
 

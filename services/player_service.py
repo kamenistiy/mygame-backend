@@ -1,6 +1,7 @@
 from datetime import datetime, timezone
 from core.db import get_db
 
+
 # ========== ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ  ==========
 def required_exp(level: int) -> int:
     if level == 1:
