@@ -2,7 +2,6 @@ from core.db import get_db
 from fastapi import HTTPException
 from datetime import datetime
 
-
 from services.notification_service import add_notification
 from services.player_service import recalc_derived_stats
 

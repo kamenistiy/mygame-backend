@@ -22,6 +22,7 @@ from routers.achievements import router as achievements_router
 from routers.avatars import router as avatars_router
 from routers.players import router as players_router
 from services.inventory_service import use_item_logic
+from services.notification_service import add_notification
 
 from core.config import (
     SUPABASE_URL,
@@ -86,18 +87,6 @@ from psycopg2 import OperationalError
 if not SUPABASE_URL or not SUPABASE_SERVICE_KEY or not DB_URL:
     raise ValueError("Не заданы обязательные переменные окружения: SUPABASE_URL, SUPABASE_SERVICE_KEY, DB_URL")
 supabase = create_client(SUPABASE_URL, SUPABASE_SERVICE_KEY)
-
-@app.post("/item/use")
-def use_item(user_id: str, req: UseItemRequest):
-    conn = get_db()
-    cur = conn.cursor()
-
-    result = use_item_logic(user_id, req, conn, cur)
-
-    cur.close()
-    conn.close()
-
-    return result
 
 @app.get("/")
 def root():
