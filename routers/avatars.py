@@ -1,18 +1,13 @@
 from fastapi import APIRouter, HTTPException, UploadFile, File, Form
 from pydantic import BaseModel
 from typing import Optional
-
-from core.db import get_db
-
 from uuid import UUID
 import uuid
 
+from core.db import get_db
+from core.config import SUPABASE_URL, SUPABASE_SERVICE_KEY
 from supabase import create_client
 
-from core.config import (
-    SUPABASE_URL,
-    SUPABASE_SERVICE_KEY
-)
 
 supabase = create_client(SUPABASE_URL, SUPABASE_SERVICE_KEY)
 
