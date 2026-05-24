@@ -122,3 +122,20 @@ def remove_item_from_inventory(user_id: str, item_id: str, quantity: int = 1) ->
     finally:
         cur.close()
         conn.close()
+
+@router.get("/inventory/junk/{user_id}")
+def get_junk_inventory(user_id: str):
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute("""
+        SELECT i.id, i.name, i.description, i.icon, j.quantity, i.rarity, i.level, i.price
+        FROM junk_inventory j
+        JOIN items i ON j.item_id = i.id
+        WHERE j.user_id = %s
+    """, (user_id,))
+    items = cur.fetchall()
+    cur.close()
+    conn.close()
+    return items
+
+

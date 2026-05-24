@@ -158,6 +158,7 @@ def cancel_avatar_request(req: CancelRequest):
         cur.close()
         conn.close()
 
+# Эндпоинт – получение списка заявок (только для админа):
 @router.get("/admin/avatar-requests")
 def get_avatar_requests(user_id: str):
     if not is_admin(user_id):
@@ -295,3 +296,26 @@ def review_avatar(req: AvatarReviewRequest, admin_user_id: str):
 
     else:
         raise HTTPException(status_code=400, detail="Неверное действие")
+    
+# Библиотека аватаров, редактирование профиля.
+@router.get("/user-avatars/{user_id}")
+def get_user_avatars(user_id: str):
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute("""
+        SELECT id, storage_path, is_active FROM user_avatars
+        WHERE user_id = %s
+        ORDER BY created_at DESC
+    """, (user_id,))
+    rows = cur.fetchall()
+    cur.close()
+    conn.close()
+    avatars = []
+    for row in rows:
+        url = supabase.storage.from_("avatars").get_public_url(row['storage_path']) if row['storage_path'] else None
+        avatars.append({
+            "id": row['id'],
+            "url": url,
+            "is_active": row['is_active']
+        })
+    return {"avatars": avatars}
