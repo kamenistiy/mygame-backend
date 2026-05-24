@@ -22,6 +22,19 @@ class MoveToJunkRequest(BaseModel):
     item_id: str
     quantity: int = 1
     
+@router.post("/inventory/use")
+def use_item(user_id: str, req: UseItemRequest):
+    conn = get_db()
+    cur = conn.cursor()
+
+    result = use_item_logic(user_id, req, conn, cur)
+
+    conn.commit()
+    cur.close()
+    conn.close()
+
+    return result
+
 @router.get("/inventory/{user_id}")
 def get_inventory(user_id: str):
     conn = get_db()
