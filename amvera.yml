@@ -12,5 +12,5 @@ run:
   image: null
   command: uvicorn main:app --host 0.0.0.0 --port 8000
   args: null
-  containerPort: 80
+  containerPort: 8000
   servicePort: 80
