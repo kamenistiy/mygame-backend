@@ -31,6 +31,18 @@ print("=== IMPORTS OK ===")
 
 app = FastAPI()
 
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=[
+        "https://mygame-frontend.vercel.app",
+        "http://localhost:3000",
+        "*"
+    ],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
 print("=== FASTAPI CREATED ===")
 
 app.include_router(inventory_router)
