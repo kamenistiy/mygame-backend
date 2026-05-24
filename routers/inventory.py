@@ -1,7 +1,8 @@
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Depends
 from pydantic import BaseModel
 
 from core.db import get_db
+from services.inventory_service import use_item_logic
 
 router = APIRouter()
 
@@ -22,6 +23,20 @@ class MoveToJunkRequest(BaseModel):
     item_id: str
     quantity: int = 1
     
+@router.post("/item/use")
+def use_item(user_id: str, req: UseItemRequest):
+    conn = get_db()
+    cur = conn.cursor()
+
+    try:
+        result = use_item_logic(user_id, req, conn, cur)
+        conn.commit()
+        return result
+
+    finally:
+        cur.close()
+        conn.close()
+
 @router.post("/inventory/use")
 def use_item(user_id: str, req: UseItemRequest):
     conn = get_db()
