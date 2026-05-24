@@ -8,7 +8,8 @@ from services.notification_service import add_notification
 from services.player_service import (
     regen_energy_if_needed,
     add_default_avatars_for_user,
-    recalc_derived_stats
+    recalc_derived_stats,
+    required_exp
 )
 
 router = APIRouter()
