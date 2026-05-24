@@ -21,6 +21,7 @@ from routers.notifications import router as notifications_router
 from routers.achievements import router as achievements_router
 from routers.avatars import router as avatars_router
 from routers.players import router as players_router
+print("=== PLAYERS ROUTER IMPORTED ===")
 from services.inventory_service import use_item_logic
 from services.notification_service import add_notification
 
@@ -47,11 +48,12 @@ app.add_middleware(
 
 print("=== FASTAPI CREATED ===")
 
-app.include_router(inventory_router)
-app.include_router(notifications_router)
-app.include_router(achievements_router)
-app.include_router(avatars_router)
+# app.include_router(inventory_router)
+# app.include_router(notifications_router)
+# app.include_router(achievements_router)
+# app.include_router(avatars_router)
 app.include_router(players_router)
+print("=== PLAYERS ROUTER INCLUDED ===")
 
 def is_valid_uuid(uuid_str: str) -> bool:
     try:
