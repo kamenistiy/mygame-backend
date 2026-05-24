@@ -20,6 +20,7 @@ from routers.inventory import router as inventory_router
 from routers.notifications import router as notifications_router
 from routers.achievements import router as achievements_router
 from routers.avatars import router as avatars_router
+from routers.players import router as players_router
 
 from core.config import (
     SUPABASE_URL,
@@ -36,6 +37,7 @@ app.include_router(inventory_router)
 app.include_router(notifications_router)
 app.include_router(achievements_router)
 app.include_router(avatars_router)
+app.include_router(players_router)
 
 def is_valid_uuid(uuid_str: str) -> bool:
     try:
@@ -125,19 +127,6 @@ def add_achievement_for_user(user_id: str, achievement_id: str):
                 ON CONFLICT (user_id, achievement_id) DO NOTHING
             """, (user_id, achievement_id))
             conn.commit()
-
-# --- Модели данных ---
-class PlayerUpdate(BaseModel):
-    exp: Optional[int] = None
-    coins: Optional[int] = None
-    level: Optional[int] = None
-
-class StatsUpdate(BaseModel):
-    body: int
-    strength: int
-    agility: int
-    intellect: int
-    free_points: int
 
 
 # ========== МОДЕЛИ ДЛЯ ИНВЕНТАРЯ ==========
