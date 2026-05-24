@@ -9,6 +9,8 @@ from core.config import SUPABASE_URL, SUPABASE_SERVICE_KEY
 from supabase import create_client
 from fastapi import Depends
 from services.auth_service import get_admin_user
+from services.notification_service import add_notification
+from services.achievement_service import grant_achievement_if_not_obtained
 
 
 supabase = create_client(SUPABASE_URL, SUPABASE_SERVICE_KEY)
