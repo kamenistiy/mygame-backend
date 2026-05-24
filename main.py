@@ -15,6 +15,9 @@ app.add_middleware(
 
 app.include_router(players_router)
 
+for r in app.routes:
+    print(r.path)
+    
 @app.get("/")
 def root():
     return {"message": "Server working"}
