@@ -2,6 +2,7 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 from typing import Optional
 from core.db import get_db
+from services.player_service import regen_energy_if_needed
 
 router = APIRouter()
 
