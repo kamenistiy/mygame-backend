@@ -65,41 +65,10 @@ import time
 import logging
 from psycopg2 import OperationalError
 
-# Обновить данные игрока (опыт)
-def required_exp(level: int) -> int:
-    """Возвращает опыт, необходимый для перехода с level на level+1."""
-    if level == 1:
-        return 20
-    else:
-        return 20 * (2 ** (level - 1))
-
-
-
-def get_db():
-    max_retries = 3
-
-    for i in range(max_retries):
-        try:
-            conn = psycopg2.connect(
-                DB_URL,
-                cursor_factory=RealDictCursor,
-                sslmode="require"
-            )
-            return conn
-
-        except OperationalError as e:
-            if i == max_retries - 1:
-                raise
-
-            print(f"Попытка {i+1} не удалась: {e}")
-            time.sleep(2 ** i)
-
 # Проверка, что переменные заданы (опционально, но полезно для отладки)
 if not SUPABASE_URL or not SUPABASE_SERVICE_KEY or not DB_URL:
     raise ValueError("Не заданы обязательные переменные окружения: SUPABASE_URL, SUPABASE_SERVICE_KEY, DB_URL")
 supabase = create_client(SUPABASE_URL, SUPABASE_SERVICE_KEY)
-
-
 
 # ========== МОДЕЛИ ДЛЯ ИНВЕНТАРЯ ==========
 class AddItemRequest(BaseModel):
@@ -131,17 +100,6 @@ def remove_item_from_inventory(user_id: str, item_id: str, quantity: int = 1) ->
     finally:
         cur.close()
         conn.close()
-
-# ========== Вспомогательная функция – проверка, является ли пользователь админом: ==========
-def is_admin(user_id: str) -> bool:
-    conn = get_db()
-    cur = conn.cursor()
-    cur.execute("SELECT is_admin FROM players WHERE id = %s", (user_id,))
-    row = cur.fetchone()
-    cur.close()
-    conn.close()
-    return row and row['is_admin'] == True
-
 
 
 # ========== УДАЛЕНИЕ ПРЕДМЕТА ИЗ ИНВЕНТАРЯ ==========
@@ -309,34 +267,7 @@ def grant_achievement_if_not_obtained(user_id: str, achievement_id: str):
             add_notification(user_id, 'achievement', f'Достижение "{reward["name"]}" получено!',
                              f'Награда: +{reward["exp_reward"]} опыта, +{reward["coins_reward"]} монет.')
             return True
-        
-def regen_energy_if_needed(user_id: str):
-    """Проверяет, сколько прошло времени с last_energy_regen, и добавляет +1 энергии за каждые 10 минут."""
-    with get_db() as conn:
-        with conn.cursor() as cur:
-            cur.execute("SELECT current_energy, max_energy, last_energy_regen FROM player_stats WHERE user_id = %s", (user_id,))
-            stats = cur.fetchone()
-            if not stats:
-                return
-            now = datetime.now(timezone.utc)
-            last = stats['last_energy_regen']
-            if last.tzinfo is None:
-                last = last.replace(tzinfo=timezone.utc)
-            diff_seconds = (now - last).total_seconds()
-            minutes_passed = diff_seconds // 600  # 10 минут = 600 секунд
-            if minutes_passed <= 0:
-                return
-            new_energy = min(stats['current_energy'] + int(minutes_passed), stats['max_energy'])
-            if new_energy != stats['current_energy']:
-                cur.execute("""
-                    UPDATE player_stats
-                    SET current_energy = %s, last_energy_regen = NOW()
-                    WHERE user_id = %s
-                """, (new_energy, user_id))
-                conn.commit()
-        
-
-        
+         
 print("=== MAIN END ===")
 print("=== ALL ROUTES REGISTERED ===")
 @app.get("/ping")
