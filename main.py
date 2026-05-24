@@ -17,7 +17,7 @@ from datetime import datetime, timezone
 from fastapi import FastAPI
 from routers.inventory import router as inventory_router
 from routers.notifications import router as notifications_router
-
+from routers.achievements import router as achievements_router
 
 from core.config import (
     SUPABASE_URL,
@@ -29,6 +29,7 @@ app = FastAPI()
 
 app.include_router(inventory_router)
 app.include_router(notifications_router)
+app.include_router(achievements_router)
 
 def is_valid_uuid(uuid_str: str) -> bool:
     try:
