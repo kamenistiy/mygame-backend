@@ -1,4 +1,5 @@
 # main.py
+print("=== MAIN START ===")
 
 from fastapi import FastAPI, HTTPException, UploadFile, File, Form, Request
 from pydantic import BaseModel
@@ -25,8 +26,11 @@ from core.config import (
     SUPABASE_SERVICE_KEY,
     DB_URL
 )
+print("=== IMPORTS OK ===")
 
 app = FastAPI()
+
+print("=== FASTAPI CREATED ===")
 
 app.include_router(inventory_router)
 app.include_router(notifications_router)
@@ -923,7 +927,7 @@ def update_player_stats(user_id: str, update: StatsUpdate):
     recalc_derived_stats(user_id)
     return {"success": True}
         
-        
+print("=== MAIN END ===")
 print("=== ALL ROUTES REGISTERED ===")
 
 
