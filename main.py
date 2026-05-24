@@ -66,7 +66,7 @@ def is_valid_uuid(uuid_str: str) -> bool:
     
 print("=== STARTING APP ===")
 print("STEP 1")
-supabase = create_client(SUPABASE_URL, SUPABASE_SERVICE_KEY)
+from core.supabase_client import supabase
 print("STEP 2")
 
 
@@ -86,7 +86,7 @@ from psycopg2 import OperationalError
 # Проверка, что переменные заданы (опционально, но полезно для отладки)
 if not SUPABASE_URL or not SUPABASE_SERVICE_KEY or not DB_URL:
     raise ValueError("Не заданы обязательные переменные окружения: SUPABASE_URL, SUPABASE_SERVICE_KEY, DB_URL")
-supabase = create_client(SUPABASE_URL, SUPABASE_SERVICE_KEY)
+from core.supabase_client import supabase
 
 @app.get("/")
 def root():
