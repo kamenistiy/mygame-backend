@@ -2,11 +2,14 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 from typing import Optional
 from core.db import get_db
-from services.player_service import regen_energy_if_needed
-from services.player_service import add_default_avatars_for_user
 from services.achievement_service import grant_achievement_if_not_obtained
 from core.supabase_client import supabase
 from services.notification_service import add_notification
+from services.player_service import (
+    regen_energy_if_needed,
+    add_default_avatars_for_user,
+    recalc_derived_stats
+)
 
 router = APIRouter()
 
