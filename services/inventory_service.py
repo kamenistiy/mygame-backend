@@ -2,18 +2,9 @@ from core.db import get_db
 from fastapi import HTTPException
 from datetime import datetime
 
+
 from services.notification_service import add_notification
 from services.player_service import recalc_derived_stats
-
-# ========== МОДЕЛИ ДЛЯ ИНВЕНТАРЯ ==========
-class AddItemRequest(BaseModel):
-    item_id: str
-    quantity: int = 1
-
-class RemoveItemRequest(BaseModel):
-    item_id: str
-    quantity: int = 1
-
 
 def remove_item_from_inventory(user_id: str, item_id: str, quantity: int = 1) -> bool:
     conn = get_db()
