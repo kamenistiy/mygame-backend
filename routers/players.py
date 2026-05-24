@@ -29,51 +29,65 @@ class StatsUpdate(BaseModel):
 
 @router.get("/player/{user_id}")
 def get_player(user_id: str):
-    with get_db() as conn:
-        with conn.cursor() as cur:
+    try:
+        with get_db() as conn:
+            with conn.cursor() as cur:
 
-            cur.execute("SELECT * FROM players WHERE id = %s", (user_id,))
-            player = cur.fetchone()
+                cur.execute(
+                    "SELECT * FROM players WHERE id = %s",
+                    (user_id,)
+                )
 
-            if player:
+                player = cur.fetchone()
+
+                if player:
+                    return player
+
+                # username
+                try:
+                    user_data = supabase.auth.admin.get_user_by_id(user_id)
+                    username = user_data.user.user_metadata.get(
+                        'username',
+                        'Player'
+                    )
+
+                except Exception as e:
+                    print(f"Ошибка получения username из Auth: {e}")
+                    username = "Player_" + user_id[:8]
+
+                # создание игрока
+                cur.execute("""
+                    INSERT INTO players
+                    (id, username, level, exp, coins, created_at)
+                    VALUES (%s, %s, 1, 0, 0, NOW())
+                    RETURNING *
+                """, (user_id, username))
+
+                player = cur.fetchone()
+                conn.commit()
+
+                # стартовые штуки
+                add_default_avatars_for_user(user_id)
+
+                grant_achievement_if_not_obtained(
+                    user_id,
+                    'alpha_tester'
+                )
+
+                add_notification(
+                    user_id,
+                    'system',
+                    'Добро пожаловать!',
+                    f'Привет, {username}! Рады видеть тебя в Fastened World.'
+                )
+
+                recalc_derived_stats(user_id)
+
                 return player
 
-            # === PLAYER НЕ СУЩЕСТВУЕТ ===
-            try:
-                user_data = supabase.auth.admin.get_user_by_id(user_id)
-                username = user_data.user.user_metadata.get('username', 'Player')
-            except Exception as e:
-                print(f"Ошибка получения username из Auth: {e}")
-                username = "Player_" + user_id[:8]
-
-            cur.execute("""
-                INSERT INTO players (id, username, level, exp, coins, created_at)
-                VALUES (%s, %s, 1, 0, 0, NOW())
-                RETURNING *
-            """, (user_id, username))
-
-            player = cur.fetchone()
-            conn.commit()
-
-            # 3. Добавляем стандартные аватары и достижение
-            add_default_avatars_for_user(user_id)
-            grant_achievement_if_not_obtained(user_id, 'alpha_tester')
-
-            add_notification(
-                user_id,
-                'system',
-                'Добро пожаловать!',
-                f'Привет, {username}! Рады видеть тебя в Fastened World. Найди друзей, осваивай мир и получай удовольствие от игры!'
-            )
-            add_notification(
-                user_id,
-                'system',
-                'Стартовые Аватары',
-                'Вы получили 10 стартовых Аватаров! Применить их можно во вкладке "Профиль", нажав на значок шестерни.'
-            )
-            recalc_derived_stats(user_id)
-
-            return player
+    except Exception as e:
+        print("❌ GET_PLAYER ERROR:", e)
+        raise HTTPException(status_code=500, detail=str(e))
    
 
 @router.post("/player/{user_id}")
