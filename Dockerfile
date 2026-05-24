@@ -10,6 +10,5 @@ COPY . .
 
 ENV PYTHONUNBUFFERED=1
 
-EXPOSE 8000
-
+EXPOSE 8080
 CMD ["python", "main.py"]
