@@ -929,5 +929,8 @@ def update_player_stats(user_id: str, update: StatsUpdate):
         
 print("=== MAIN END ===")
 print("=== ALL ROUTES REGISTERED ===")
+@app.get("/ping")
+def ping():
+    return {"status": "ok"}
 
 
