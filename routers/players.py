@@ -4,8 +4,9 @@ from typing import Optional
 from core.db import get_db
 from services.player_service import regen_energy_if_needed
 from services.player_service import add_default_avatars_for_user
-from services.achievement_service import add_achievement_for_user
+from services.achievement_service import grant_achievement_if_not_obtained
 from core.supabase_client import supabase
+from services.notification_service import add_notification
 
 router = APIRouter()
 
@@ -26,42 +27,49 @@ class StatsUpdate(BaseModel):
 def get_player(user_id: str):
     with get_db() as conn:
         with conn.cursor() as cur:
+
             cur.execute("SELECT * FROM players WHERE id = %s", (user_id,))
             player = cur.fetchone()
+
             if player:
                 return player
-            else:
-                # 1. Пытаемся получить username из auth.users
-                try:
-                    # Используем Admin API – требует service_role ключ
-                    user_data = supabase.auth.admin.get_user_by_id(user_id)
-                    username = user_data.user.user_metadata.get('username', 'Player')
-                except Exception as e:
-                    print(f"Ошибка получения username из Auth: {e}")
-                    # Если не получилось – генерируем временное имя (или можно оставить заглушку)
-                    username = "Player_" + user_id[:8]
 
-                # 2. Создаём запись в таблице players
-                cur.execute("""
-                    INSERT INTO players (id, username, level, exp, coins, created_at)
-                    VALUES (%s, %s, 1, 0, 0, NOW())
-                    RETURNING *
-                """, (user_id, username))
-                player = cur.fetchone()
-                conn.commit()
+            # === PLAYER НЕ СУЩЕСТВУЕТ ===
+            try:
+                user_data = supabase.auth.admin.get_user_by_id(user_id)
+                username = user_data.user.user_metadata.get('username', 'Player')
+            except Exception as e:
+                print(f"Ошибка получения username из Auth: {e}")
+                username = "Player_" + user_id[:8]
 
-                # 3. Добавляем стандартные аватары и достижение
-                add_default_avatars_for_user(user_id)
-                add_achievement_for_user(user_id, 'alpha_tester')
+            cur.execute("""
+                INSERT INTO players (id, username, level, exp, coins, created_at)
+                VALUES (%s, %s, 1, 0, 0, NOW())
+                RETURNING *
+            """, (user_id, username))
 
-                add_notification(user_id, 'system', 'Добро пожаловать!', 
-                    f'Привет, {username}! Рады видеть тебя в Fastened World. Найди друзей, осваивай мир и получай удовольствие от игры!')
-                add_notification(user_id, 'system', 'Стартовые Аватары', 
-                    'Вы получили 10 стартовых Аватаров! Применить их можно во вкладке "Профиль", нажав на значок шестерни.')
-                add_notification(user_id, 'achievement', 'Благодарность', 
-                    'Вы получили достижение "Благодарность" за участие в альфа-тесте.')
-                recalc_derived_stats(user_id)
-                return player
+            player = cur.fetchone()
+            conn.commit()
+
+            # 3. Добавляем стандартные аватары и достижение
+            add_default_avatars_for_user(user_id)
+            grant_achievement_if_not_obtained(user_id, 'alpha_tester')
+
+            add_notification(
+                user_id,
+                'system',
+                'Добро пожаловать!',
+                f'Привет, {username}! Рады видеть тебя в Fastened World. Найди друзей, осваивай мир и получай удовольствие от игры!'
+            )
+            add_notification(
+                user_id,
+                'system',
+                'Стартовые Аватары',
+                'Вы получили 10 стартовых Аватаров! Применить их можно во вкладке "Профиль", нажав на значок шестерни.'
+            )
+            recalc_derived_stats(user_id)
+
+            return player
    
 
 @router.post("/player/{user_id}")
