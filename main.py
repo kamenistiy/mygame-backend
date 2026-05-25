@@ -12,6 +12,7 @@ from routers.avatars import router as avatars_router
 
 app = FastAPI()
 
+app.include_router(players_router)
 app.include_router(inventory_router)
 app.include_router(notifications_router)
 app.include_router(achievements_router)
@@ -19,7 +20,7 @@ app.include_router(avatars_router)
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["https://mygame-frontend.vercel.app"],
+    allow_origins=["https://mygame-frontend.vercel.app", "http://localhost:3000",],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -30,11 +31,6 @@ async def log_requests(request: Request, call_next):
     print(f"➡️ {request.method} {request.url.path}")
     response = await call_next(request)
     return response
-
-app.include_router(players_router)
-
-for r in app.routes:
-    print(r.path)
 
 @app.get("/")
 def root():
