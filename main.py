@@ -5,7 +5,17 @@ from routers.players import router as players_router
 import os
 print(f"PORT env = {os.environ.get('PORT')}")
 
+from routers.inventory import router as inventory_router
+from routers.notifications import router as notifications_router
+from routers.achievements import router as achievements_router
+from routers.avatars import router as avatars_router
+
 app = FastAPI()
+
+app.include_router(inventory_router)
+app.include_router(notifications_router)
+app.include_router(achievements_router)
+app.include_router(avatars_router)
 
 app.add_middleware(
     CORSMiddleware,
