@@ -69,6 +69,13 @@ def get_player(user_id: str):
                 # стартовые штуки
                 add_default_avatars_for_user(user_id)
 
+                add_notification(
+                    user_id,
+                    'system',
+                    'Стартовые Аватары',
+                    'Вы получили 10 стартовых Аватаров! Применить их можно во вкладке "Профиль", нажав на значок шестерни.'
+                )
+
                 grant_achievement_if_not_obtained(
                     user_id,
                     'alpha_tester'

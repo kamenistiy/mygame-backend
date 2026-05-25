@@ -49,16 +49,3 @@ def mark_notifications_read(user_id: str, notification_ids: List[str] = None):
             conn.commit()
             print(f"✅ Помечено прочитанными для {user_id}")
             return {"success": True}
-
-def add_notification(user_id: str, notif_type: str, title: str, message: str):
-    print(f"📢 add_notification: {title} для {user_id}")
-    with get_db() as conn:
-        with conn.cursor() as cur:
-            cur.execute("""
-                INSERT INTO notifications (user_id, type, title, message, expires_at, is_read)
-                VALUES (%s, %s, %s, %s, NOW() + INTERVAL '1 year', false)
-                RETURNING is_read
-            """, (user_id, notif_type, title, message))
-            result = cur.fetchone()
-            print(f"✅ Вставлено is_read = {result['is_read']}")
-            conn.commit()
