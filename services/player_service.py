@@ -134,3 +134,73 @@ def add_achievement_for_user(user_id: str, achievement_id: str):
                 ON CONFLICT (user_id, achievement_id) DO NOTHING
             """, (user_id, achievement_id))
             conn.commit()
+
+def add_exp_and_coins(user_id: str, exp_to_add: int = 0, coins_to_add: int = 0):
+    with get_db() as conn:
+        with conn.cursor() as cur:
+
+            cur.execute("""
+                SELECT level, exp, coins
+                FROM players
+                WHERE id = %s
+            """, (user_id,))
+
+            player = cur.fetchone()
+
+            if not player:
+                return False
+
+            current_level = player['level']
+            current_exp = player['exp']
+            current_coins = player['coins']
+
+            new_level = current_level
+            total_exp = current_exp + exp_to_add
+
+            while total_exp >= required_exp(new_level):
+                total_exp -= required_exp(new_level)
+                new_level += 1
+
+            new_coins = current_coins + coins_to_add
+
+            cur.execute("""
+                UPDATE players
+                SET
+                    exp = %s,
+                    level = %s,
+                    coins = %s
+                WHERE id = %s
+            """, (
+                total_exp,
+                new_level,
+                new_coins,
+                user_id
+            ))
+
+            # level up rewards
+            if new_level > current_level:
+                level_diff = new_level - current_level
+
+                cur.execute("""
+                    UPDATE player_stats
+                    SET
+                        max_hp = max_hp + %s,
+                        current_hp = current_hp + %s,
+                        max_mana = max_mana + %s,
+                        current_mana = current_mana + %s,
+                        free_stat_points = free_stat_points + %s
+                    WHERE user_id = %s
+                """, (
+                    level_diff * 10,
+                    level_diff * 10,
+                    level_diff * 10,
+                    level_diff * 10,
+                    level_diff * 2,
+                    user_id
+                ))
+
+            conn.commit()
+
+    recalc_derived_stats(user_id)
+
+    return True
