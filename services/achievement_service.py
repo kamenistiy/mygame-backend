@@ -24,6 +24,44 @@ def grant_achievement_if_not_obtained(user_id: str, achievement_id: str):
 
             if existing:
                 print("ℹ️ Достижение уже получено")
+
+                # Проверяем уведомление
+                cur.execute("""
+                    SELECT 1
+                    FROM notifications
+                    WHERE user_id = %s
+                    AND type = 'achievement'
+                    AND title = (
+                        SELECT name
+                        FROM achievements
+                        WHERE id = %s
+                    )
+                """, (user_id, achievement_id))
+
+                notif_exists = cur.fetchone()
+
+                print("NOTIF EXISTS =", notif_exists)
+
+                if not notif_exists:
+
+                    cur.execute("""
+                        SELECT name
+                        FROM achievements
+                        WHERE id = %s
+                    """, (achievement_id,))
+
+                    ach = cur.fetchone()
+
+                    if ach:
+                        add_notification(
+                            user_id,
+                            'achievement',
+                            ach['name'],
+                            f'Вы получили достижение "{ach["name"]}".'
+                        )
+
+                        print("✅ Missing notification restored")
+
                 return False
 
             print("LOADING REWARD")
@@ -70,7 +108,7 @@ def grant_achievement_if_not_obtained(user_id: str, achievement_id: str):
             )
 
             print("✅ DONE")
-            
+
             if new_level > current_level:
                 recalc_derived_stats(user_id)
             return True

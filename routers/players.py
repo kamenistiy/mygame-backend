@@ -27,8 +27,11 @@ class StatsUpdate(BaseModel):
     intellect: int
     free_points: int
 
+
 @router.get("/player/{user_id}")
 def get_player(user_id: str):
+    if user_id == "null":
+        raise HTTPException(status_code=400, detail="Invalid user_id")
     try:
         with get_db() as conn:
             with conn.cursor() as cur:
