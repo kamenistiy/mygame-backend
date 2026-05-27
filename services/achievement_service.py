@@ -108,7 +108,4 @@ def grant_achievement_if_not_obtained(user_id: str, achievement_id: str):
             )
 
             print("✅ DONE")
-
-            if new_level > current_level:
-                recalc_derived_stats(user_id)
             return True

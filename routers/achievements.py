@@ -75,18 +75,13 @@ def update_achievement_progress(req: dict):
     row = cur.fetchone()
     is_unlocked = False
     if not row:
-    # Создать запись
-        cur.execute(
-        "INSERT INTO user_achievements (user_id, achievement_id, current_progress) VALUES (%s, %s, %s)",
-        (user_id, achievement_id, 0)
-    )
-
         current = 0
 
         cur.execute(
-        "SELECT max_progress FROM achievements WHERE id = %s",
-        (achievement_id,)
-    )
+            "SELECT max_progress FROM achievements WHERE id = %s",
+            (achievement_id,)
+        )
+
         max_prog_row = cur.fetchone()
         max_prog = max_prog_row['max_progress']
 
