@@ -176,6 +176,8 @@ def add_exp_and_coins(user_id: str, exp_to_add: int = 0, coins_to_add: int = 0):
                 new_coins,
                 user_id
             ))
+            print(f"LEVEL UPDATE -> level={new_level}, exp={total_exp}, coins={new_coins}"
+            )
 
             # level up rewards
             if new_level > current_level:
@@ -203,4 +205,6 @@ def add_exp_and_coins(user_id: str, exp_to_add: int = 0, coins_to_add: int = 0):
 
     recalc_derived_stats(user_id)
 
+    if new_level > current_level:
+        recalc_derived_stats(user_id)
     return True
