@@ -133,6 +133,7 @@ def update_player(user_id: str, update: PlayerUpdate):
             )
             updated = cur.fetchone()
             conn.commit()
+            
 
             # Если уровень повысился – обновляем характеристики
             if new_level > current_level:

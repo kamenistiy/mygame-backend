@@ -1,5 +1,6 @@
 from services.notification_service import add_notification
 from services.player_service import required_exp
+from services.player_service import add_exp_and_coins
 from core.db import get_db
 
 #Достижение с аватарами 1,5,10   
@@ -9,7 +10,8 @@ def grant_achievement_if_not_obtained(user_id: str, achievement_id: str):
     with get_db() as conn:
         with conn.cursor() as cur:
 
-            # Проверяем — уже есть достижение?
+            print("CHECKING EXISTING")
+
             cur.execute("""
                 SELECT 1
                 FROM user_achievements
@@ -18,11 +20,14 @@ def grant_achievement_if_not_obtained(user_id: str, achievement_id: str):
 
             existing = cur.fetchone()
 
+            print("EXISTING =", existing)
+
             if existing:
-                print("  ℹ️ Достижение уже получено")
+                print("ℹ️ Достижение уже получено")
                 return False
 
-            # Получаем награды
+            print("LOADING REWARD")
+
             cur.execute("""
                 SELECT name, exp_reward, coins_reward
                 FROM achievements
@@ -31,31 +36,31 @@ def grant_achievement_if_not_obtained(user_id: str, achievement_id: str):
 
             reward = cur.fetchone()
 
+            print("REWARD =", reward)
+
             if not reward:
-                print(f"  ❌ Достижение {achievement_id} не найдено")
+                print(f"❌ Достижение {achievement_id} не найдено")
                 return False
 
-            # Выдаём достижение
+            print("INSERT ACHIEVEMENT")
+
             cur.execute("""
                 INSERT INTO user_achievements
                 (user_id, achievement_id, current_progress, is_unlocked, unlocked_at)
                 VALUES (%s, %s, 1, true, NOW())
             """, (user_id, achievement_id))
 
-            # Награды
-            cur.execute("""
-                UPDATE players
-                SET
-                    coins = coins + %s,
-                    exp = exp + %s
-                WHERE id = %s
-            """, (
-                reward['coins_reward'],
-                reward['exp_reward'],
-                user_id
-            ))
-
             conn.commit()
+
+            print("ADDING EXP/COINS")
+
+            add_exp_and_coins(
+                user_id,
+                exp_to_add=reward['exp_reward'],
+                coins_to_add=reward['coins_reward']
+            )
+
+            print("ADDING NOTIFICATION")
 
             add_notification(
                 user_id,
@@ -64,5 +69,8 @@ def grant_achievement_if_not_obtained(user_id: str, achievement_id: str):
                 f'Вы получили достижение "{reward["name"]}".'
             )
 
-            print("  ✅ Достижение выдано")
+            print("✅ DONE")
+            
+            if new_level > current_level:
+                recalc_derived_stats(user_id)
             return True
