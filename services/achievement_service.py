@@ -45,17 +45,23 @@ def grant_achievement_if_not_obtained(user_id: str, achievement_id: str):
             # Награды
             cur.execute("""
                 UPDATE players
-                SET coins = coins + %s
+                SET
+                    coins = coins + %s,
+                    exp = exp + %s
                 WHERE id = %s
-            """, (reward['coins_reward'], user_id))
+            """, (
+                reward['coins_reward'],
+                reward['exp_reward'],
+                user_id
+            ))
 
             conn.commit()
 
             add_notification(
                 user_id,
                 'achievement',
-                'Благодарность',
-                'Вы получили достижение "Благодарность" за участие в альфа-тесте.'
+                reward['name'],
+                f'Вы получили достижение "{reward["name"]}".'
             )
 
             print("  ✅ Достижение выдано")
