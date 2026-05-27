@@ -1,6 +1,8 @@
 from fastapi import APIRouter
 from core.db import get_db
 
+from services.achievement_service import grant_achievement_if_not_obtained
+
 router = APIRouter()
 
 
@@ -59,7 +61,17 @@ def update_achievement_progress(req: dict):
     conn = get_db()
     cur = conn.cursor()
     # Получить текущий прогресс
-    cur.execute("SELECT current_progress, max_progress FROM achievements a JOIN user_achievements ua ON a.id = ua.achievement_id WHERE ua.user_id = %s AND ua.achievement_id = %s", (user_id, achievement_id))
+    cur.execute("""
+    SELECT
+        current_progress,
+        max_progress,
+        is_unlocked
+    FROM achievements a
+    JOIN user_achievements ua
+        ON a.id = ua.achievement_id
+    WHERE ua.user_id = %s
+    AND ua.achievement_id = %s
+""", (user_id, achievement_id))
     row = cur.fetchone()
     is_unlocked = False
     if not row:
