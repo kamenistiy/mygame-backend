@@ -85,8 +85,10 @@ def update_achievement_progress(req: dict):
     new_progress = min(current + increment, max_prog)
     cur.execute("UPDATE user_achievements SET current_progress = %s WHERE user_id = %s AND achievement_id = %s", (new_progress, user_id, achievement_id))
     if new_progress >= max_prog and not is_unlocked:
-        cur.execute("UPDATE user_achievements SET is_unlocked = true, unlocked_at = NOW() WHERE user_id = %s AND achievement_id = %s", (user_id, achievement_id))
-        # Можно добавить выдачу награды (опыт, монеты)
+        grant_achievement_if_not_obtained(
+        user_id,
+        achievement_id
+    )
     conn.commit()
     cur.close()
     conn.close()
