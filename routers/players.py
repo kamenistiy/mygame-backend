@@ -3,6 +3,7 @@ from pydantic import BaseModel
 from typing import Optional
 from core.db import get_db
 from services.achievement_service import grant_achievement_if_not_obtained
+from services.states_service import check_expired_states
 from core.supabase_client import supabase
 from services.notification_service import add_notification
 from services.player_service import (
@@ -154,6 +155,7 @@ def update_player(user_id: str, update: PlayerUpdate):
                         """, (level_diff * 10, level_diff * 10, level_diff * 10, level_diff * 10, level_diff * 2, user_id))
                         conn_stats.commit()
                         recalc_derived_stats(user_id)
+                        check_expired_states(user_id)
             return updated
 
 
@@ -190,36 +192,126 @@ def list_players():
 
 @router.get("/player/stats/{user_id}")
 def get_player_stats(user_id: str):
-    regen_energy_if_needed(user_id)
+    # ... проверка регенерации энергии ...
     with get_db() as conn:
         with conn.cursor() as cur:
+            # Базовые значения
             cur.execute("""
-                SELECT current_hp, max_hp, current_mana, max_mana, current_energy, max_energy,
-                       body, strength, agility, intellect, free_stat_points,
-                       pdf, mdf, pat, mat, ddg, acc, sp,
-                       crft, spd, gat, awr,
-                       fame, rep, ins,
-                       pvp, pve, unic, zone
-                FROM player_stats
-                WHERE user_id = %s
+                SELECT base_body, base_strength, base_agility, base_intellect,
+                       current_hp, max_hp, current_mana, max_mana, current_energy, max_energy,
+                       free_stat_points, p.level
+                FROM player_stats ps
+                JOIN players p ON p.id = ps.user_id
+                WHERE ps.user_id = %s
             """, (user_id,))
-            stats = cur.fetchone()
-            if not stats:
-                raise HTTPException(status_code=404, detail="Stats not found")
-            return stats
+            base = cur.fetchone()
+            if not base:
+                raise HTTPException(404, "Stats not found")
+
+            # Активные состояния с модификаторами
+            cur.execute("""
+                SELECT parameters FROM player_states
+                WHERE user_id = %s AND expires_at > NOW()
+            """, (user_id,))
+            states = cur.fetchall()
+
+            # Суммируем модификаторы
+            mod_body = sum((s['parameters'] or {}).get('body', 0) for s in states)
+            mod_str = sum((s['parameters'] or {}).get('strength', 0) for s in states)
+            mod_agi = sum((s['parameters'] or {}).get('agility', 0) for s in states)
+            mod_int = sum((s['parameters'] or {}).get('intellect', 0) for s in states)
+            mod_pat = sum((s['parameters'] or {}).get('pat', 0) for s in states)
+            mod_mat = sum((s['parameters'] or {}).get('mat', 0) for s in states)
+            mod_pdf = sum((s['parameters'] or {}).get('pdf', 0) for s in states)
+            mod_mdf = sum((s['parameters'] or {}).get('mdf', 0) for s in states)
+
+            # Итоговые базовые статы
+            total_body = base['base_body'] + mod_body
+            total_str = base['base_strength'] + mod_str
+            total_agi = base['base_agility'] + mod_agi
+            total_int = base['base_intellect'] + mod_int
+
+            # Производные характеристики (формулы из player_service.py)
+            level = base['level']
+            max_hp = 100 + (level - 1) * 10 + total_body * 10
+            max_mana = 100 + (level - 1) * 10 + total_int * 10
+            pat = total_str * 5 + mod_pat
+            mat = total_int * 5 + mod_mat
+            sp = total_int * 5          # 0.5% за очко
+            pdf = total_body * 5 + mod_pdf
+            mdf = total_body * 5 + mod_mdf
+            awr = total_body * 5
+            spd = total_agi * 10 - total_body * 5
+            acc = total_agi * 5
+            ddg = total_agi * 5
+            gat = total_str * 5
+
+            return {
+                "current_hp": base['current_hp'],
+                "max_hp": max_hp,
+                "current_mana": base['current_mana'],
+                "max_mana": max_mana,
+                "current_energy": base['current_energy'],
+                "max_energy": base['max_energy'],
+                "body": total_body,
+                "strength": total_str,
+                "agility": total_agi,
+                "intellect": total_int,
+                "free_stat_points": base['free_stat_points'],
+                "pdf": pdf, "mdf": mdf, "pat": pat, "mat": mat,
+                "ddg": ddg, "acc": acc, "sp": sp,
+                "crft": 0,     # пока заглушка
+                "spd": spd, "gat": gat, "awr": awr,
+                "fame": 0, "rep": 0, "ins": 0,
+                "pvp": 0, "pve": 0, "unic": 0, "zone": 0
+            }
         
 @router.post("/player/stats/update")
 def update_player_stats(user_id: str, update: StatsUpdate):
     with get_db() as conn:
         with conn.cursor() as cur:
+            # 1. Получить текущие базовые статы
+            cur.execute("""
+                SELECT base_body, base_strength, base_agility, base_intellect
+                FROM player_stats WHERE user_id = %s
+            """, (user_id,))
+            current_base = cur.fetchone()
+            if not current_base:
+                raise HTTPException(404, "Player stats not found")
+
+            # 2. Получить суммарные модификаторы от активных состояний
+            cur.execute("""
+                SELECT parameters FROM player_states
+                WHERE user_id = %s AND expires_at > NOW()
+            """, (user_id,))
+            states = cur.fetchall()
+            mod_body = sum((s['parameters'] or {}).get('body', 0) for s in states)
+            mod_str = sum((s['parameters'] or {}).get('strength', 0) for s in states)
+            mod_agi = sum((s['parameters'] or {}).get('agility', 0) for s in states)
+            mod_int = sum((s['parameters'] or {}).get('intellect', 0) for s in states)
+
+            # 3. Вычислить новые базовые значения (переданные итоговые - модификаторы)
+            new_base_body = update.body - mod_body
+            new_base_strength = update.strength - mod_str
+            new_base_agility = update.agility - mod_agi
+            new_base_intellect = update.intellect - mod_int
+
+            # 4. Обновить базовые колонки и free_stat_points
             cur.execute("""
                 UPDATE player_stats
-                SET body = %s, strength = %s, agility = %s, intellect = %s, free_stat_points = %s
+                SET base_body = %s,
+                    base_strength = %s,
+                    base_agility = %s,
+                    base_intellect = %s,
+                    free_stat_points = %s
                 WHERE user_id = %s
-            """, (update.body, update.strength, update.agility, update.intellect, update.free_points, user_id))
+            """, (new_base_body, new_base_strength, new_base_agility, new_base_intellect,
+                  update.free_points, user_id))
+
             if cur.rowcount == 0:
-                raise HTTPException(status_code=404, detail="Player stats not found")
+                raise HTTPException(404, "Player stats not found")
             conn.commit()
-    # Пересчитываем производные
+
+    # После обновления базовых статов пересчитываем производные
     recalc_derived_stats(user_id)
     return {"success": True}
