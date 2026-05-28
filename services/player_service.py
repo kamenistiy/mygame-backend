@@ -50,11 +50,12 @@ def regen_energy_if_needed(user_id: str):
                 conn.commit()
 
 def recalc_derived_stats(user_id: str):
-    """Пересчитывает производные характеристики на основе level, body, strength, agility, intellect."""
+    """Пересчитывает производные характеристики на основе базовых статов (без учёта временных модификаторов)."""
     with get_db() as conn:
         with conn.cursor() as cur:
             cur.execute("""
-                SELECT p.level, ps.body, ps.strength, ps.agility, ps.intellect
+                SELECT p.level,
+                       ps.base_body, ps.base_strength, ps.base_agility, ps.base_intellect
                 FROM players p
                 JOIN player_stats ps ON p.id = ps.user_id
                 WHERE p.id = %s
@@ -63,24 +64,25 @@ def recalc_derived_stats(user_id: str):
             if not row:
                 return
             level = row['level']
-            body = row['body']
-            strength = row['strength']
-            agility = row['agility']
-            intellect = row['intellect']
-            
-            max_hp = 100 + (level - 1) * 10 + body * 10
-            max_mana = 100 + (level - 1) * 10 + intellect * 10
-            pat = strength * 5
-            mat = intellect * 5
-            sp = intellect * 5          # 0.5% за очко => 5 = 0.5%
-            pdf = body * 5
-            mdf = body * 5
-            awr = body * 5              # 0.5% за очко
-            spd = agility * 10 - body * 5    # 1% за ловкость, -0.5% за телосложение
-            acc = agility * 5
-            ddg = agility * 5
-            gat = strength * 5          # 0.5% за очко
-            
+            base_body = row['base_body']
+            base_strength = row['base_strength']
+            base_agility = row['base_agility']
+            base_intellect = row['base_intellect']
+
+            # Формулы (без модификаторов)
+            max_hp = 100 + (level - 1) * 10 + base_body * 10
+            max_mana = 100 + (level - 1) * 10 + base_intellect * 10
+            pat = base_strength * 5
+            mat = base_intellect * 5
+            sp = base_intellect * 5
+            pdf = base_body * 5
+            mdf = base_body * 5
+            awr = base_body * 5
+            spd = base_agility * 10 - base_body * 5
+            acc = base_agility * 5
+            ddg = base_agility * 5
+            gat = base_strength * 5
+
             cur.execute("""
                 UPDATE player_stats
                 SET max_hp = %s,
@@ -97,7 +99,7 @@ def recalc_derived_stats(user_id: str):
                     gat = %s
                 WHERE user_id = %s
             """, (max_hp, max_mana, pat, mat, sp, pdf, mdf, awr, spd, acc, ddg, gat, user_id))
-            
+
             # Корректируем текущие HP/Mana, если они превышают новые максимумы
             cur.execute("""
                 UPDATE player_stats
