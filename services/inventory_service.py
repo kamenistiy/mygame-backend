@@ -81,29 +81,28 @@ def use_item_logic(user_id: str, req, conn, cur):
 
     # === STATS CERTIFICATE ===
     if req.item_id == 'stats_certificate':
-        cur.execute("""
-            SELECT p.level, ps.body, ps.strength, ps.agility, ps.intellect, ps.free_stat_points
-            FROM players p
-            JOIN player_stats ps ON p.id = ps.user_id
-            WHERE p.id = %s
-        """, (user_id,))
+    cur.execute("""
+        SELECT p.level, ps.base_body, ps.base_strength, ps.base_agility, ps.base_intellect, ps.free_stat_points
+        FROM players p
+        JOIN player_stats ps ON p.id = ps.user_id
+        WHERE p.id = %s
+    """, (user_id,))
+    player_stats = cur.fetchone()
+    if not player_stats:
+        raise HTTPException(status_code=404, detail="Player not found")
 
-        player_stats = cur.fetchone()
-        if not player_stats:
-            raise HTTPException(status_code=404, detail="Player not found")
+    level = player_stats['level']
+    correct_free_points = (level - 1) * 2 + 2
 
-        level = player_stats['level']
-        correct_free_points = (level - 1) * 2 + 2
+    cur.execute("""
+        UPDATE player_stats 
+        SET base_body = 0, base_strength = 0, base_agility = 0, base_intellect = 0, 
+            free_stat_points = free_stat_points + %s
+        WHERE user_id = %s
+    """, (correct_free_points, user_id))
 
-        cur.execute("""
-            UPDATE player_stats
-            SET body = 0, strength = 0, agility = 0, intellect = 0,
-                free_stat_points = %s
-            WHERE user_id = %s
-        """, (correct_free_points, user_id))
-
-        conn.commit()
-
+    conn.commit()
+        recalc_derived_stats(user_id)
         remove_item_from_inventory(user_id, req.item_id, req.quantity)
 
         add_notification(
