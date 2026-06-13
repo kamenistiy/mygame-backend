@@ -1,3 +1,4 @@
+import json
 from datetime import datetime, timedelta, timezone
 from core.db import get_db
 from services.player_service import recalc_derived_stats
@@ -33,38 +34,38 @@ STATE_INFO = {
 }
 
 def apply_state(user_id: str, state_key: str, duration_seconds: int = 10):
-    """Применить состояние к игроку (если уже активно – продлить время)."""
     with get_db() as conn:
         with conn.cursor() as cur:
-            # Проверяем, есть ли уже активное состояние
             cur.execute(
                 "SELECT expires_at FROM player_states WHERE user_id = %s AND state_key = %s",
                 (user_id, state_key)
             )
             existing = cur.fetchone()
             expires_at = datetime.now(timezone.utc) + timedelta(seconds=duration_seconds)
-            
+
+            # Получаем модификаторы из STATE_INFO
+            info = STATE_INFO.get(state_key, {})
+            modifiers = info.get('modifiers', {})
+            parameters_json = json.dumps(modifiers)   # сохраняем в JSON
+
             if existing:
-                # Продлеваем существующее
                 cur.execute(
                     "UPDATE player_states SET expires_at = %s WHERE user_id = %s AND state_key = %s",
                     (expires_at, user_id, state_key)
                 )
             else:
-                # Создаём новое
                 cur.execute(
                     "INSERT INTO player_states (user_id, state_key, expires_at, parameters) VALUES (%s, %s, %s, %s)",
-                    (user_id, state_key, expires_at, '{}')
+                    (user_id, state_key, expires_at, parameters_json)
                 )
-                # Применяем эффект (только при первом применении, чтобы не накапливать)
+                # Вызываем _apply_effect только для одноразовых эффектов (урон) или изменения базовых характеристик
                 _apply_effect(user_id, state_key)
             conn.commit()
 
 def _apply_effect(user_id: str, state_key: str):
-    """Непосредственно изменяет характеристики игрока."""
+    """Применяет только те эффекты, которые должны изменить БД (урон или базовые статы)."""
     info = STATE_INFO[state_key]
     if state_key == 'exhaustion':
-        # Наносим урон
         with get_db() as conn:
             with conn.cursor() as cur:
                 cur.execute("""
@@ -75,41 +76,37 @@ def _apply_effect(user_id: str, state_key: str):
                 """, (info['damage_hp'], info['damage_mana'], user_id))
                 conn.commit()
     elif 'modifiers' in info:
-        with get_db() as conn:
-            with conn.cursor() as cur:
-                mods = info['modifiers']
-                # Обновляем базовые статы (body, strength и т.д.)
-                for stat, delta in mods.items():
-                    if stat in ('body', 'strength', 'agility', 'intellect'):
-                        cur.execute(f"UPDATE player_stats SET {stat} = {stat} + %s WHERE user_id = %s", (delta, user_id))
-                    # Для боевых статов (pat, mat, pdf, mdf) – они пересчитаются через recalc_derived_stats,
-                    # но rage изменяет их напрямую, поэтому меняем их и потом пересчитываем.
-                    elif stat in ('pat', 'mat', 'pdf', 'mdf'):
-                        cur.execute(f"UPDATE player_stats SET {stat} = {stat} + %s WHERE user_id = %s", (delta, user_id))
-                conn.commit()
-        # Если менялись базовые статы – пересчитываем производные
-        if any(s in mods for s in ('body','strength','agility','intellect')):
+        mods = info['modifiers']
+        # Только для состояний, которые меняют базовые характеристики (body, strength и т.д.)
+        if any(s in mods for s in ('body', 'strength', 'agility', 'intellect')):
+            with get_db() as conn:
+                with conn.cursor() as cur:
+                    for stat, delta in mods.items():
+                        if stat in ('body', 'strength', 'agility', 'intellect'):
+                            # Обновляем базовые колонки (например, base_body, base_strength...)
+                            cur.execute(f"UPDATE player_stats SET base_{stat} = base_{stat} + %s WHERE user_id = %s", (delta, user_id))
+                    conn.commit()
             recalc_derived_stats(user_id)
+        # Для состояний, меняющих только pat/mat/pdf/mdf (как rage) – ничего не делаем,
+        # модификаторы уже сохранены в parameters и будут учтены в /player/stats
 
 def remove_state(user_id: str, state_key: str):
-    """Снять состояние (откатить эффект)."""
     info = STATE_INFO[state_key]
     if state_key == 'exhaustion':
-        # Истощение не откатывает урон
-        pass
+        pass  # урон не откатываем
     elif 'modifiers' in info:
-        with get_db() as conn:
-            with conn.cursor() as cur:
-                mods = info['modifiers']
-                for stat, delta in mods.items():
-                    if stat in ('body','strength','agility','intellect'):
-                        cur.execute(f"UPDATE player_stats SET {stat} = {stat} - %s WHERE user_id = %s", (delta, user_id))
-                    elif stat in ('pat','mat','pdf','mdf'):
-                        cur.execute(f"UPDATE player_stats SET {stat} = {stat} - %s WHERE user_id = %s", (delta, user_id))
-                conn.commit()
-        if any(s in mods for s in ('body','strength','agility','intellect')):
+        mods = info['modifiers']
+        # Откатываем только изменения базовых характеристик
+        if any(s in mods for s in ('body', 'strength', 'agility', 'intellect')):
+            with get_db() as conn:
+                with conn.cursor() as cur:
+                    for stat, delta in mods.items():
+                        if stat in ('body', 'strength', 'agility', 'intellect'):
+                            cur.execute(f"UPDATE player_stats SET base_{stat} = base_{stat} - %s WHERE user_id = %s", (delta, user_id))
+                    conn.commit()
             recalc_derived_stats(user_id)
-    # Удаляем запись из таблицы
+        # Для pat/mat/pdf/mdf – ничего не делаем, они не хранятся в БД
+    # Удаляем запись состояния
     with get_db() as conn:
         with conn.cursor() as cur:
             cur.execute(
