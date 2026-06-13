@@ -63,7 +63,7 @@ def apply_state(user_id: str, state_key: str, duration_seconds: int = 10):
             conn.commit()
 
 def _apply_effect(user_id: str, state_key: str):
-    """Применяет только те эффекты, которые должны изменить БД (урон или базовые статы)."""
+    """Применяет только одноразовые эффекты (урон). Не меняет базовые статы."""
     info = STATE_INFO[state_key]
     if state_key == 'exhaustion':
         with get_db() as conn:
@@ -75,38 +75,11 @@ def _apply_effect(user_id: str, state_key: str):
                     WHERE user_id = %s
                 """, (info['damage_hp'], info['damage_mana'], user_id))
                 conn.commit()
-    elif 'modifiers' in info:
-        mods = info['modifiers']
-        # Только для состояний, которые меняют базовые характеристики (body, strength и т.д.)
-        if any(s in mods for s in ('body', 'strength', 'agility', 'intellect')):
-            with get_db() as conn:
-                with conn.cursor() as cur:
-                    for stat, delta in mods.items():
-                        if stat in ('body', 'strength', 'agility', 'intellect'):
-                            # Обновляем базовые колонки (например, base_body, base_strength...)
-                            cur.execute(f"UPDATE player_stats SET base_{stat} = base_{stat} + %s WHERE user_id = %s", (delta, user_id))
-                    conn.commit()
-            recalc_derived_stats(user_id)
-        # Для состояний, меняющих только pat/mat/pdf/mdf (как rage) – ничего не делаем,
-        # модификаторы уже сохранены в parameters и будут учтены в /player/stats
+    # Для всех остальных состояний – ничего не делаем, модификаторы уже в parameters
 
 def remove_state(user_id: str, state_key: str):
-    info = STATE_INFO[state_key]
-    if state_key == 'exhaustion':
-        pass  # урон не откатываем
-    elif 'modifiers' in info:
-        mods = info['modifiers']
-        # Откатываем только изменения базовых характеристик
-        if any(s in mods for s in ('body', 'strength', 'agility', 'intellect')):
-            with get_db() as conn:
-                with conn.cursor() as cur:
-                    for stat, delta in mods.items():
-                        if stat in ('body', 'strength', 'agility', 'intellect'):
-                            cur.execute(f"UPDATE player_stats SET base_{stat} = base_{stat} - %s WHERE user_id = %s", (delta, user_id))
-                    conn.commit()
-            recalc_derived_stats(user_id)
-        # Для pat/mat/pdf/mdf – ничего не делаем, они не хранятся в БД
-    # Удаляем запись состояния
+    # Никаких изменений базовых статов!
+    # Просто удаляем запись состояния
     with get_db() as conn:
         with conn.cursor() as cur:
             cur.execute(
@@ -114,6 +87,7 @@ def remove_state(user_id: str, state_key: str):
                 (user_id, state_key)
             )
             conn.commit()
+    # Если это exhaustion – не нужно ничего откатывать (урон уже нанесён)
 
 def check_expired_states(user_id: str):
     """Проверить истекшие состояния и снять их."""
