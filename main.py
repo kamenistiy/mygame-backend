@@ -2,6 +2,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi import Request
 from routers.players import router as players_router
+from fastapi.responses import JSONResponse
 import os
 print(f"PORT env = {os.environ.get('PORT')}")
 
@@ -35,6 +36,17 @@ async def log_requests(request: Request, call_next):
     response = await call_next(request)
     return response
 
+@app.exception_handler(Exception)
+async def cors_aware_exception_handler(request: Request, exc: Exception):
+    return JSONResponse(
+        status_code=500,
+        content={"detail": "Internal Server Error"},
+        headers={
+            "Access-Control-Allow-Origin": "https://mygame-frontend.vercel.app",
+            "Access-Control-Allow-Credentials": "true",
+        }
+    )
+    
 @app.get("/")
 def root():
     return {"message": "Server working"}
