@@ -202,21 +202,16 @@ def list_players():
 
 @router.get("/player/stats/{user_id}")
 def get_player_stats(user_id: str):
-    # 1. Сначала регенерируем ХП/МП
+    # 1. Применяем регенерацию HP/MP (ленивое обновление)
     apply_regen(user_id)
-    
-    # 2. Затем читаем обновлённые данные
+
     with get_db() as conn:
         with conn.cursor() as cur:
-            cur.execute(""" ... """)
-    # 3 ... проверка регенерации энергии ...
-    with get_db() as conn:
-        with conn.cursor() as cur:
-            # Базовые значения
+            # 2. Запрашиваем актуальные данные
             cur.execute("""
                 SELECT base_body, base_strength, base_agility, base_intellect,
-                       current_hp, max_hp, current_mana, max_mana, current_energy, max_energy,
-                       free_stat_points, p.level
+                       current_hp, max_hp, current_mana, max_mana,
+                       current_energy, max_energy, free_stat_points, p.level
                 FROM player_stats ps
                 JOIN players p ON p.id = ps.user_id
                 WHERE ps.user_id = %s
@@ -224,13 +219,6 @@ def get_player_stats(user_id: str):
             base = cur.fetchone()
             if not base:
                 raise HTTPException(404, "Stats not found")
-
-            # Активные состояния с модификаторами
-            cur.execute("""
-                SELECT parameters FROM player_states
-                WHERE user_id = %s AND expires_at > NOW()
-            """, (user_id,))
-            states = cur.fetchall()
 
             # Суммируем модификаторы
             mod_body = sum((s['parameters'] or {}).get('body', 0) for s in states)
