@@ -220,7 +220,14 @@ def get_player_stats(user_id: str):
             if not base:
                 raise HTTPException(404, "Stats not found")
 
-            # Суммируем модификаторы
+            # 3. Получаем активные состояния с их параметрами (добавлено)
+            cur.execute("""
+                SELECT parameters FROM player_states
+                WHERE user_id = %s AND expires_at > NOW()
+            """, (user_id,))
+            states = cur.fetchall()
+
+            # 4. Суммируем модификаторы
             mod_body = sum((s['parameters'] or {}).get('body', 0) for s in states)
             mod_str = sum((s['parameters'] or {}).get('strength', 0) for s in states)
             mod_agi = sum((s['parameters'] or {}).get('agility', 0) for s in states)
@@ -242,7 +249,7 @@ def get_player_stats(user_id: str):
             max_mana = 100 + (level - 1) * 10 + total_int * 10
             pat = total_str * 5 + mod_pat
             mat = total_int * 5 + mod_mat
-            sp = total_int * 5          # 0.5% за очко
+            sp = total_int * 5
             pdf = total_body * 5 + mod_pdf
             mdf = total_body * 5 + mod_mdf
             awr = total_body * 5
@@ -265,7 +272,7 @@ def get_player_stats(user_id: str):
                 "free_stat_points": base['free_stat_points'],
                 "pdf": pdf, "mdf": mdf, "pat": pat, "mat": mat,
                 "ddg": ddg, "acc": acc, "sp": sp,
-                "crft": 0,     # пока заглушка
+                "crft": 0,
                 "spd": spd, "gat": gat, "awr": awr,
                 "fame": 0, "rep": 0, "ins": 0,
                 "pvp": 0, "pve": 0, "unic": 0, "zone": 0
