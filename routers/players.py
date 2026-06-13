@@ -2,7 +2,7 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 from typing import Optional
 from core.db import get_db
-from services.achievement_service import grant_achievement_if_not_obtained
+from services.achievement_service import update_achievement_progress_logic
 from services.states_service import check_expired_states
 from core.supabase_client import supabase
 from services.notification_service import add_notification
@@ -93,6 +93,15 @@ def get_player(user_id: str):
                 )
 
                 recalc_derived_stats(user_id)
+                cur.execute("SELECT approved_avatars_count FROM players WHERE id = %s", (user_id,))
+                count_row = cur.fetchone()
+                if count_row:
+                    count = count_row['approved_avatars_count']
+                    for _ in range(count):
+                        update_achievement_progress_logic(user_id, 'avatar_lover', 1)
+                        update_achievement_progress_logic(user_id, 'avatar_lover_5', 1)
+                        update_achievement_progress_logic(user_id, 'avatar_lover_10', 1)
+                # -------------------------------------
 
                 return player
 

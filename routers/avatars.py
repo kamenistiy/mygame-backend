@@ -10,7 +10,7 @@ from supabase import create_client
 from fastapi import Depends
 from services.auth_service import get_admin_user
 from services.notification_service import add_notification
-from services.achievement_service import grant_achievement_if_not_obtained
+from services.achievement_service import update_achievement_progress_logic
 
 
 supabase = create_client(SUPABASE_URL, SUPABASE_SERVICE_KEY)
@@ -242,12 +242,10 @@ def review_avatar(
         conn.commit()
         print("=== APPROVE DONE (commit) ===")
 
-        # Выдаём достижения и уведомления
-        grant_achievement_if_not_obtained(user_id, 'avatar_lover')
-        if new_count >= 5:
-            grant_achievement_if_not_obtained(user_id, 'avatar_lover_5')
-        if new_count >= 10:
-            grant_achievement_if_not_obtained(user_id, 'avatar_lover_10')
+        # Обновляем прогресс достижений (каждое одобрение увеличивает счётчик на 1)
+        update_achievement_progress_logic(user_id, 'avatar_lover', 1)
+        update_achievement_progress_logic(user_id, 'avatar_lover_5', 1)
+        update_achievement_progress_logic(user_id, 'avatar_lover_10', 1)
 
         orig_filename = request.get('original_filename', 'неизвестный файл')
         add_notification(user_id, 'system', 'Аватар одобрен',

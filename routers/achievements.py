@@ -1,7 +1,7 @@
 from fastapi import APIRouter
 from core.db import get_db
 
-from services.achievement_service import grant_achievement_if_not_obtained
+from services.achievement_service import update_achievement_progress_logic
 
 router = APIRouter()
 
@@ -58,45 +58,5 @@ def update_achievement_progress(req: dict):
     user_id = req.get('user_id')
     achievement_id = req.get('achievement_id')
     increment = req.get('increment', 1)
-    conn = get_db()
-    cur = conn.cursor()
-    # Получить текущий прогресс
-    cur.execute("""
-    SELECT
-        current_progress,
-        max_progress,
-        is_unlocked
-    FROM achievements a
-    JOIN user_achievements ua
-        ON a.id = ua.achievement_id
-    WHERE ua.user_id = %s
-    AND ua.achievement_id = %s
-""", (user_id, achievement_id))
-    row = cur.fetchone()
-    is_unlocked = False
-    if not row:
-        current = 0
-
-        cur.execute(
-            "SELECT max_progress FROM achievements WHERE id = %s",
-            (achievement_id,)
-        )
-
-        max_prog_row = cur.fetchone()
-        max_prog = max_prog_row['max_progress']
-
-    else:
-        is_unlocked = row['is_unlocked']
-        current = row['current_progress']
-        max_prog = row['max_progress']
-    new_progress = min(current + increment, max_prog)
-    cur.execute("UPDATE user_achievements SET current_progress = %s WHERE user_id = %s AND achievement_id = %s", (new_progress, user_id, achievement_id))
-    if new_progress >= max_prog and not is_unlocked:
-        grant_achievement_if_not_obtained(
-        user_id,
-        achievement_id
-    )
-    conn.commit()
-    cur.close()
-    conn.close()
+    update_achievement_progress_logic(user_id, achievement_id, increment)
     return {"success": True}
