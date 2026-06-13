@@ -109,3 +109,48 @@ def grant_achievement_if_not_obtained(user_id: str, achievement_id: str):
 
             print("✅ DONE")
             return True
+def update_achievement_progress_logic(user_id: str, achievement_id: str, increment: int = 1):
+    """Увеличивает прогресс достижения. Если достижение выполнено – выдаёт награду."""
+    with get_db() as conn:
+        with conn.cursor() as cur:
+            # Получаем max_progress и текущую запись
+            cur.execute("SELECT max_progress FROM achievements WHERE id = %s", (achievement_id,))
+            max_prog_row = cur.fetchone()
+            if not max_prog_row:
+                return
+            max_progress = max_prog_row['max_progress']
+
+            cur.execute("""
+                SELECT current_progress, is_unlocked
+                FROM user_achievements
+                WHERE user_id = %s AND achievement_id = %s
+            """, (user_id, achievement_id))
+            row = cur.fetchone()
+
+            if not row:
+                # Нет записи – создаём
+                cur.execute("""
+                    INSERT INTO user_achievements (user_id, achievement_id, current_progress, is_unlocked)
+                    VALUES (%s, %s, 0, false)
+                """, (user_id, achievement_id))
+                current_progress = 0
+                is_unlocked = False
+            else:
+                current_progress = row['current_progress']
+                is_unlocked = row['is_unlocked']
+
+            if is_unlocked:
+                return  # уже получено – ничего не делаем
+
+            new_progress = min(current_progress + increment, max_progress)
+            cur.execute("""
+                UPDATE user_achievements
+                SET current_progress = %s
+                WHERE user_id = %s AND achievement_id = %s
+            """, (new_progress, user_id, achievement_id))
+
+            if new_progress >= max_progress:
+                # Достижение выполнено – выдаём награду
+                grant_achievement_if_not_obtained(user_id, achievement_id)
+
+            conn.commit()
