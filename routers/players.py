@@ -202,12 +202,12 @@ def list_players():
 
 @router.get("/player/stats/{user_id}")
 def get_player_stats(user_id: str):
-    # 1. Применяем регенерацию HP/MP (ленивое обновление)
+    # 1. Применяем регенерацию HP/MP
     apply_regen(user_id)
 
     with get_db() as conn:
         with conn.cursor() as cur:
-            # 2. Запрашиваем актуальные данные
+            # 2. Базовые статы
             cur.execute("""
                 SELECT base_body, base_strength, base_agility, base_intellect,
                        current_hp, max_hp, current_mana, max_mana,
@@ -220,7 +220,7 @@ def get_player_stats(user_id: str):
             if not base:
                 raise HTTPException(404, "Stats not found")
 
-            # 3. Получаем активные состояния с их параметрами (добавлено)
+            # 3. ПОЛУЧАЕМ АКТИВНЫЕ СОСТОЯНИЯ (ЭТОТ БЛОК БЫЛ ПРОПУЩЕН)
             cur.execute("""
                 SELECT parameters FROM player_states
                 WHERE user_id = %s AND expires_at > NOW()
@@ -243,7 +243,7 @@ def get_player_stats(user_id: str):
             total_agi = base['base_agility'] + mod_agi
             total_int = base['base_intellect'] + mod_int
 
-            # Производные характеристики (формулы из player_service.py)
+            # Производные характеристики
             level = base['level']
             max_hp = 100 + (level - 1) * 10 + total_body * 10
             max_mana = 100 + (level - 1) * 10 + total_int * 10
