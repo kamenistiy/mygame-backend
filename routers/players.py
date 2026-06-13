@@ -10,7 +10,8 @@ from services.player_service import (
     regen_energy_if_needed,
     add_default_avatars_for_user,
     recalc_derived_stats,
-    required_exp
+    required_exp,
+    apply_regen
 )
 
 router = APIRouter()
@@ -201,7 +202,14 @@ def list_players():
 
 @router.get("/player/stats/{user_id}")
 def get_player_stats(user_id: str):
-    # ... проверка регенерации энергии ...
+    # 1. Сначала регенерируем ХП/МП
+    apply_regen(user_id)
+    
+    # 2. Затем читаем обновлённые данные
+    with get_db() as conn:
+        with conn.cursor() as cur:
+            cur.execute(""" ... """)
+    # 3 ... проверка регенерации энергии ...
     with get_db() as conn:
         with conn.cursor() as cur:
             # Базовые значения

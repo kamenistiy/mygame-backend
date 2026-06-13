@@ -114,7 +114,7 @@ def use_item_logic(user_id: str, req, conn, cur):
             user_id,
             'system',
             'Очки характеристик сброшены',
-            f'Вы использовали Фолиант смены Пути. У вас {correct_free_points}ед. свободных очков.'
+            f'Вы использовали Фолиант смены Пути. У вас {correct_free_points} ед. свободных очков.'
         )
 
         return {"success": True, "message": "Stats reset"}

@@ -49,6 +49,48 @@ def regen_energy_if_needed(user_id: str):
                 """, (new_energy, user_id))
                 conn.commit()
 
+def apply_regen(user_id: str):
+    """Обновляет current_hp и current_mana игрока на основе времени, прошедшего с last_regen_time."""
+    with get_db() as conn:
+        with conn.cursor() as cur:
+            cur.execute("""
+                SELECT current_hp, max_hp, current_mana, max_mana, last_regen_time
+                FROM player_stats
+                WHERE user_id = %s
+            """, (user_id,))
+            row = cur.fetchone()
+            if not row:
+                return
+
+            now = datetime.now(timezone.utc)
+            last = row['last_regen_time']
+            if not last:
+                last = now
+
+            delta_seconds = (now - last).total_seconds()
+            # 10% от максимума в минуту -> 0.1 / 60 в секунду
+            regen_per_second_hp = row['max_hp'] * 0.1 / 60
+            regen_per_second_mana = row['max_mana'] * 0.1 / 60
+
+            new_hp = row['current_hp'] + delta_seconds * regen_per_second_hp
+            new_mana = row['current_mana'] + delta_seconds * regen_per_second_mana
+
+            new_hp = min(new_hp, row['max_hp'])
+            new_mana = min(new_mana, row['max_mana'])
+
+            new_hp = int(new_hp)
+            new_mana = int(new_mana)
+
+            if new_hp == row['current_hp'] and new_mana == row['current_mana']:
+                return
+
+            cur.execute("""
+                UPDATE player_stats
+                SET current_hp = %s, current_mana = %s, last_regen_time = %s
+                WHERE user_id = %s
+            """, (new_hp, new_mana, now, user_id))
+            conn.commit()
+
 def recalc_derived_stats(user_id: str):
     """Пересчитывает производные характеристики на основе базовых статов (без учёта временных модификаторов)."""
     with get_db() as conn:
