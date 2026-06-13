@@ -80,7 +80,7 @@ def use_item_logic(user_id: str, req, conn, cur):
         return {"success": True, "request_id": new_request["id"]}
 
     # === STATS CERTIFICATE ===
-        if req.item_id == 'stats_certificate':
+    if req.item_id == 'stats_certificate':
         cur.execute("""
             SELECT p.level, ps.base_body, ps.base_strength, ps.base_agility, ps.base_intellect, ps.free_stat_points
             FROM players p
@@ -104,10 +104,10 @@ def use_item_logic(user_id: str, req, conn, cur):
 
         conn.commit()
 
-        # Импорт и вызов пересчёта производных характеристик
-        from services.player_service import recalc_derived_stats
+        # Пересчитываем производные характеристики (HP, мана, энергия, PAT, MAT и т.д.)
         recalc_derived_stats(user_id)
 
+        # Удаляем использованный предмет из инвентаря
         remove_item_from_inventory(user_id, req.item_id, req.quantity)
 
         add_notification(
@@ -118,3 +118,6 @@ def use_item_logic(user_id: str, req, conn, cur):
         )
 
         return {"success": True, "message": "Stats reset"}
+
+    # Если предмет не обработан ни одним из вышестоящих условий
+    raise HTTPException(status_code=400, detail="Не реализовано")
