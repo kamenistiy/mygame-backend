@@ -6,12 +6,15 @@ from services.player_service import recalc_derived_stats
 # Словарь с данными состояний (иконки, типы)
 STATE_INFO = {
     'exhaustion': {
+    'name': 'Истощение',
+    'type': 'debuff',
+    'icon_class': 'state-exhaustion',
     'duration': 10,
     'modifiers': {
         'max_hp': -50,
         'max_mana': -50
     }
-},
+    },
     'weakness': {
         'name': 'Слабость',
         'type': 'debuff',
@@ -127,7 +130,8 @@ def get_active_states(user_id: str):
                     'name': info['name'],
                     'type': info['type'],
                     'icon_class': info['icon_class'],
-                    'expires_at': row['expires_at'].isoformat()
+                    'expires_at': row['expires_at'].isoformat(),
+                    'parameters': info.get('modifiers', {})
                 })
             states.sort(key=lambda s: (0 if s['type'] == 'buff' else 1))
             return states

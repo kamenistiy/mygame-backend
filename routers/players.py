@@ -221,11 +221,7 @@ def get_player_stats(user_id: str):
                 raise HTTPException(404, "Stats not found")
 
             # 3. ПОЛУЧАЕМ АКТИВНЫЕ СОСТОЯНИЯ (ЭТОТ БЛОК БЫЛ ПРОПУЩЕН)
-            cur.execute("""
-                SELECT parameters FROM player_states
-                WHERE user_id = %s AND expires_at > NOW()
-            """, (user_id,))
-            states = cur.fetchall()
+            states = get_active_states(user_id)
 
             # 4. Суммируем модификаторы
             mod_body = sum((s['parameters'] or {}).get('body', 0) for s in states)
