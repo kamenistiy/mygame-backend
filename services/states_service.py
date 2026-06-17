@@ -47,7 +47,7 @@ def apply_state(user_id: str, state_key: str, duration_seconds: int = 10):
             info = STATE_INFO.get(state_key, {})
             modifiers = info.get('modifiers', {})
             parameters_json = json.dumps(modifiers)   # сохраняем в JSON
-
+            print("EXISTING =", existing)
             if existing:
                 cur.execute(
                     "UPDATE player_states SET expires_at = %s WHERE user_id = %s AND state_key = %s",
@@ -75,6 +75,13 @@ def _apply_effect(user_id: str, state_key: str):
                     WHERE user_id = %s
                 """, (info['damage_hp'], info['damage_mana'], user_id))
                 conn.commit()
+                cur.execute("""
+                    SELECT current_hp, current_mana
+                    FROM player_stats
+                    WHERE user_id = %s
+                """, (user_id,))
+
+                print(cur.fetchone())
     # Для всех остальных состояний – ничего не делаем, модификаторы уже в parameters
 
 def remove_state(user_id: str, state_key: str):
