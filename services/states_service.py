@@ -102,7 +102,6 @@ def check_expired_states(user_id: str):
             conn.commit()
 
 def get_active_states(user_id: str):
-    """Вернуть список активных состояний (expires_at > NOW()) без удаления записей."""
     with get_db() as conn:
         with conn.cursor() as cur:
             cur.execute("""
@@ -111,20 +110,28 @@ def get_active_states(user_id: str):
                 WHERE user_id = %s AND expires_at > NOW()
                 ORDER BY state_key
             """, (user_id,))
+
             rows = cur.fetchall()
+
             states = []
+
             for row in rows:
-                state_key = row['state_key']
-                info = STATE_INFO[state_key]
+                state_key = row["state_key"]
+
+                info = STATE_INFO.get(state_key)
+
+                # 🔴 защита от кривых данных
+                if not info:
+                    continue
+
                 states.append({
-                    'id': state_key,
-                    'name': info['name'],
-                    'type': info['type'],
-                    'icon_class': info['icon_class'],
-                    'expires_at': row['expires_at'].isoformat(),
-                    'parameters': info.get('modifiers', {})
+                    "id": state_key,
+                    "name": info.get("name", state_key),
+                    "type": info.get("type", "debuff"),
+                    "icon_class": info.get("icon_class", ""),
+                    "expires_at": row["expires_at"].isoformat()
                 })
-            states.sort(key=lambda s: (0 if s['type'] == 'buff' else 1))
+
             return states
 
 def clean_expired_states():
