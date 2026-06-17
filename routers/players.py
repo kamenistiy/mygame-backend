@@ -224,15 +224,33 @@ def get_player_stats(user_id: str):
             # 3. ПОЛУЧАЕМ АКТИВНЫЕ СОСТОЯНИЯ (ЭТОТ БЛОК БЫЛ ПРОПУЩЕН)
             states = get_active_states(user_id)
 
-            # 4. Суммируем модификаторы
-            mod_body = sum((s['parameters'] or {}).get('body', 0) for s in states)
-            mod_str = sum((s['parameters'] or {}).get('strength', 0) for s in states)
-            mod_agi = sum((s['parameters'] or {}).get('agility', 0) for s in states)
-            mod_int = sum((s['parameters'] or {}).get('intellect', 0) for s in states)
-            mod_pat = sum((s['parameters'] or {}).get('pat', 0) for s in states)
-            mod_mat = sum((s['parameters'] or {}).get('mat', 0) for s in states)
-            mod_pdf = sum((s['parameters'] or {}).get('pdf', 0) for s in states)
-            mod_mdf = sum((s['parameters'] or {}).get('mdf', 0) for s in states)
+            # 4. Безопасный расчёт модификаторов
+            mod_body = 0
+            mod_str = 0
+            mod_agi = 0
+            mod_int = 0
+            mod_pat = 0
+            mod_mat = 0
+            mod_pdf = 0
+            mod_mdf = 0
+            mod_max_hp = 0
+            mod_max_mana = 0
+
+            for s in states:
+                params = s.get('parameters') or {}
+
+                mod_body += params.get('body', 0)
+                mod_str += params.get('strength', 0)
+                mod_agi += params.get('agility', 0)
+                mod_int += params.get('intellect', 0)
+
+                mod_pat += params.get('pat', 0)
+                mod_mat += params.get('mat', 0)
+                mod_pdf += params.get('pdf', 0)
+                mod_mdf += params.get('mdf', 0)
+
+                mod_max_hp += params.get('max_hp', 0)
+                mod_max_mana += params.get('max_mana', 0)
 
             # Итоговые базовые статы
             total_body = base['base_body'] + mod_body
@@ -295,14 +313,29 @@ def update_player_stats(user_id: str, update: StatsUpdate):
 
             # 2. Получить суммарные модификаторы от активных состояний
             cur.execute("""
-                SELECT parameters FROM player_states
+                SELECT state_key, parameters
+                FROM player_states
                 WHERE user_id = %s AND expires_at > NOW()
             """, (user_id,))
-            states = cur.fetchall()
-            mod_body = sum((s['parameters'] or {}).get('body', 0) for s in states)
-            mod_str = sum((s['parameters'] or {}).get('strength', 0) for s in states)
-            mod_agi = sum((s['parameters'] or {}).get('agility', 0) for s in states)
-            mod_int = sum((s['parameters'] or {}).get('intellect', 0) for s in states)
+            states = get_active_states(user_id)
+            # 🔒 защита от None / пустого / кривых данных
+            if not states:
+                mod_body = mod_str = mod_agi = mod_int = 0
+                mod_pat = mod_mat = mod_pdf = mod_mdf = 0
+                mod_max_hp = mod_max_mana = 0
+            else:
+                mod_body = sum((s.get('parameters') or {}).get('body', 0) for s in states)
+                mod_str = sum((s.get('parameters') or {}).get('strength', 0) for s in states)
+                mod_agi = sum((s.get('parameters') or {}).get('agility', 0) for s in states)
+                mod_int = sum((s.get('parameters') or {}).get('intellect', 0) for s in states)
+
+                mod_pat = sum((s.get('parameters') or {}).get('pat', 0) for s in states)
+                mod_mat = sum((s.get('parameters') or {}).get('mat', 0) for s in states)
+                mod_pdf = sum((s.get('parameters') or {}).get('pdf', 0) for s in states)
+                mod_mdf = sum((s.get('parameters') or {}).get('mdf', 0) for s in states)
+
+                mod_max_hp = sum((s.get('parameters') or {}).get('max_hp', 0) for s in states)
+                mod_max_mana = sum((s.get('parameters') or {}).get('max_mana', 0) for s in states)
 
             # 3. Вычислить новые базовые значения (переданные итоговые - модификаторы)
             new_base_body = update.body - mod_body
