@@ -3,7 +3,8 @@ from pydantic import BaseModel
 from typing import Optional
 from core.db import get_db
 from services.achievement_service import update_achievement_progress_logic
-from services.states_service import check_expired_states
+from services.states_service import (check_expired_states,
+    get_active_states)
 from core.supabase_client import supabase
 from services.notification_service import add_notification
 from services.player_service import (
@@ -255,8 +256,11 @@ def get_player_stats(user_id: str):
             acc = total_agi * 5
             ddg = total_agi * 5
             gat = total_str * 5
-            current_hp = min(base['current_hp'], max_hp)
-            current_mana = min(base['current_mana'], max_mana)
+            current_hp = base['current_hp']
+            current_mana = base['current_mana']
+            # 🔒 ЗАЩИТА (ВАЖНО)
+            current_hp = min(current_hp, max_hp)
+            current_mana = min(current_mana, max_mana)
 
             return {
                 "current_hp": current_hp,
