@@ -105,10 +105,9 @@ def get_active_states(user_id: str):
     with get_db() as conn:
         with conn.cursor() as cur:
             cur.execute("""
-                SELECT state_key, expires_at
+                SELECT state_key, parameters
                 FROM player_states
                 WHERE user_id = %s AND expires_at > NOW()
-                ORDER BY state_key
             """, (user_id,))
 
             rows = cur.fetchall()
