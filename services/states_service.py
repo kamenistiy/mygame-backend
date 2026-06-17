@@ -105,7 +105,7 @@ def get_active_states(user_id: str):
     with get_db() as conn:
         with conn.cursor() as cur:
             cur.execute("""
-                SELECT state_key, parameters
+                SELECT state_key, parameters, expires_at
                 FROM player_states
                 WHERE user_id = %s AND expires_at > NOW()
             """, (user_id,))
@@ -115,20 +115,25 @@ def get_active_states(user_id: str):
             states = []
 
             for row in rows:
-                state_key = row["state_key"]
+                state_key = row.get("state_key")
 
                 info = STATE_INFO.get(state_key)
-
-                # 🔴 защита от кривых данных
                 if not info:
                     continue
+
+                params = row.get("parameters") or {}
+
+                expires_at = row.get("expires_at")
+                if expires_at:
+                    expires_at = expires_at.isoformat()
 
                 states.append({
                     "id": state_key,
                     "name": info.get("name", state_key),
                     "type": info.get("type", "debuff"),
                     "icon_class": info.get("icon_class", ""),
-                    "expires_at": row["expires_at"].isoformat()
+                    "parameters": params,
+                    "expires_at": expires_at
                 })
 
             return states
