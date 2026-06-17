@@ -66,15 +66,15 @@ def _apply_effect(user_id: str, state_key: str):
     """Применяет только одноразовые эффекты (урон). Не меняет базовые статы."""
     info = STATE_INFO[state_key]
     if state_key == 'exhaustion':
-        with get_db() as conn:
-            with conn.cursor() as cur:
-                cur.execute("""
-                    UPDATE player_stats
-                    SET current_hp = GREATEST(current_hp + %s, 0),
-                        current_mana = GREATEST(current_mana + %s, 0)
-                    WHERE user_id = %s
-                """, (info['damage_hp'], info['damage_mana'], user_id))
-                conn.commit()
+    with get_db() as conn:
+        with conn.cursor() as cur:
+            cur.execute("""
+                UPDATE player_stats
+                SET current_hp = GREATEST(current_hp + %s, 0),
+                    current_mana = GREATEST(current_mana + %s, 0)
+                WHERE user_id = %s
+            """, (info['damage_hp'], info['damage_mana'], user_id))
+            conn.commit()
     # Для всех остальных состояний – ничего не делаем, модификаторы уже в parameters
 
 def remove_state(user_id: str, state_key: str):
@@ -102,14 +102,15 @@ def check_expired_states(user_id: str):
                 remove_state(user_id, row['state_key'])
 
 def get_active_states(user_id: str):
-    """Вернуть список активных состояний с иконками и типами (для фронта)."""
-    check_expired_states(user_id)  # сначала чистим истекшие
+    """Вернуть список активных состояний (expires_at > NOW()) без удаления записей."""
     with get_db() as conn:
         with conn.cursor() as cur:
-            cur.execute(
-                "SELECT state_key, expires_at FROM player_states WHERE user_id = %s ORDER BY state_key",
-                (user_id,)
-            )
+            cur.execute("""
+                SELECT state_key, expires_at
+                FROM player_states
+                WHERE user_id = %s AND expires_at > NOW()
+                ORDER BY state_key
+            """, (user_id,))
             rows = cur.fetchall()
             states = []
             for row in rows:
@@ -122,6 +123,13 @@ def get_active_states(user_id: str):
                     'icon_class': info['icon_class'],
                     'expires_at': row['expires_at'].isoformat()
                 })
-            # Сортировка: сначала buff, потом debuff
             states.sort(key=lambda s: (0 if s['type'] == 'buff' else 1))
             return states
+
+def clean_expired_states():
+    """Удаляет все истекшие состояния из БД (можно вызывать по расписанию)."""
+    with get_db() as conn:
+        with conn.cursor() as cur:
+            cur.execute("DELETE FROM player_states WHERE expires_at < NOW()")
+            conn.commit()
+            return cur.rowcount

@@ -25,3 +25,8 @@ def get_active_states_endpoint(user_id: str):
 def check_expired_endpoint(user_id: str):
     check_expired_states(user_id)
     return {"success": True}
+
+@router.post("/clean_expired")
+def clean_expired():
+    count = clean_expired_states()
+    return {"deleted": count}
