@@ -119,5 +119,38 @@ def use_item_logic(user_id: str, req, conn, cur):
 
         return {"success": True, "message": "Stats reset"}
 
+    # === ARCHER BOX ===
+    if req.item_id == 'archer_box':
+        # Проверяем, что у игрока есть предмет
+        cur.execute(
+            "SELECT quantity FROM inventory WHERE user_id = %s AND item_id = %s",
+            (user_id, req.item_id)
+        )
+        row = cur.fetchone()
+        if not row or row['quantity'] < 1:
+            raise HTTPException(status_code=400, detail="Недостаточно предметов")
+
+        # Удаляем одну коробку
+        remove_item_from_inventory(user_id, req.item_id, 1)
+
+        # Добавляем арбалет (1 шт)
+        cur.execute("""
+            INSERT INTO inventory (user_id, item_id, quantity)
+            VALUES (%s, %s, 1)
+            ON CONFLICT (user_id, item_id)
+            DO UPDATE SET quantity = inventory.quantity + 1
+        """, (user_id, 'devastation_crossbow'))
+
+        conn.commit()
+
+        # Уведомление
+        add_notification(
+            user_id,
+            'system',
+            'Снаряжение получено',
+            'Вы открыли коробку и получили Арбалет Опустошения.'
+        )
+
+        return {"success": True, "message": "Вы открыли коробку и получили Арбалет Опустошения."}
     # Если предмет не обработан ни одним из вышестоящих условий
     raise HTTPException(status_code=400, detail="Не реализовано")
