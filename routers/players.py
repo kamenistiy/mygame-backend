@@ -14,6 +14,8 @@ from services.player_service import (
     required_exp,
     apply_regen
 )
+from services.inventory_service import remove_item_from_inventory
+from services.achievement_service import grant_achievement_if_not_obtained, update_achievement_progress_logic
 
 router = APIRouter()
 
@@ -30,6 +32,10 @@ class StatsUpdate(BaseModel):
     intellect: int
     free_points: int
 
+class EquipRequest(BaseModel):
+    user_id: str
+    item_id: str
+    slot: str
 
 @router.get("/player/{user_id}")
 def get_player(user_id: str):
@@ -221,47 +227,41 @@ def get_player_stats(user_id: str):
             if not base:
                 raise HTTPException(404, "Stats not found")
 
-            # 3. ПОЛУЧАЕМ АКТИВНЫЕ СОСТОЯНИЯ (ЭТОТ БЛОК БЫЛ ПРОПУЩЕН)
-            states = get_active_states(user_id)
+            # 3. Получаем АКТИВНЫЕ СОСТОЯНИЯ С ПАРАМЕТРАМИ (исправлено)
+            cur.execute("""
+                SELECT state_key, parameters
+                FROM player_states
+                WHERE user_id = %s AND expires_at > NOW()
+            """, (user_id,))
+            states_rows = cur.fetchall()
 
-            # 4. Безопасный расчёт модификаторов
-            mod_body = 0
-            mod_str = 0
-            mod_agi = 0
-            mod_int = 0
-            mod_pat = 0
-            mod_mat = 0
-            mod_pdf = 0
-            mod_mdf = 0
-            mod_max_hp = 0
-            mod_max_mana = 0
-
-            for s in states:
-                params = s.get('parameters') or {}
-
+            # 4. Суммируем модификаторы состояний
+            mod_body = mod_str = mod_agi = mod_int = 0
+            mod_pat = mod_mat = mod_pdf = mod_mdf = 0
+            for s in states_rows:
+                params = s['parameters'] or {}
                 mod_body += params.get('body', 0)
                 mod_str += params.get('strength', 0)
                 mod_agi += params.get('agility', 0)
                 mod_int += params.get('intellect', 0)
-
                 mod_pat += params.get('pat', 0)
                 mod_mat += params.get('mat', 0)
                 mod_pdf += params.get('pdf', 0)
                 mod_mdf += params.get('mdf', 0)
 
-                mod_max_hp += params.get('max_hp', 0)
-                mod_max_mana += params.get('max_mana', 0)
+            # 5. Бонусы от экипировки
+            equip_stats = get_equipment_stats(user_id)
 
-            # Итоговые базовые статы
-            total_body = base['base_body'] + mod_body
-            total_str = base['base_strength'] + mod_str
-            total_agi = base['base_agility'] + mod_agi
-            total_int = base['base_intellect'] + mod_int
+            # 6. ИТОГОВЫЕ базовые статы (с учётом состояний и экипировки)
+            total_body = base['base_body'] + mod_body + equip_stats['body']
+            total_str = base['base_strength'] + mod_str + equip_stats['strength']
+            total_agi = base['base_agility'] + mod_agi + equip_stats['agility']
+            total_int = base['base_intellect'] + mod_int + equip_stats['intellect']
 
-            # Производные характеристики
+            # 7. Производные характеристики
             level = base['level']
             max_hp = 100 + (level - 1) * 10 + total_body * 10
-            max_mana = 100 + (level - 1) * 10 + total_int * 10 
+            max_mana = 100 + (level - 1) * 10 + total_int * 10
             pat = total_str * 5 + mod_pat
             mat = total_int * 5 + mod_mat
             sp = total_int * 5
@@ -272,11 +272,10 @@ def get_player_stats(user_id: str):
             acc = total_agi * 5
             ddg = total_agi * 5
             gat = total_str * 5
-            current_hp = base['current_hp']
-            current_mana = base['current_mana']
-            # 🔒 ЗАЩИТА (ВАЖНО)
-            current_hp = min(current_hp, max_hp)
-            current_mana = min(current_mana, max_mana)
+
+            # 8. Корректировка текущих HP/MP
+            current_hp = min(base['current_hp'], max_hp)
+            current_mana = min(base['current_mana'], max_mana)
 
             return {
                 "current_hp": current_hp,
@@ -311,31 +310,17 @@ def update_player_stats(user_id: str, update: StatsUpdate):
             if not current_base:
                 raise HTTPException(404, "Player stats not found")
 
-            # 2. Получить суммарные модификаторы от активных состояний
+            # 2. Получить модификаторы от активных состояний (исправлено)
             cur.execute("""
-                SELECT state_key, parameters
+                SELECT parameters
                 FROM player_states
                 WHERE user_id = %s AND expires_at > NOW()
             """, (user_id,))
-            states = get_active_states(user_id)
-            # 🔒 защита от None / пустого / кривых данных
-            if not states:
-                mod_body = mod_str = mod_agi = mod_int = 0
-                mod_pat = mod_mat = mod_pdf = mod_mdf = 0
-                mod_max_hp = mod_max_mana = 0
-            else:
-                mod_body = sum((s.get('parameters') or {}).get('body', 0) for s in states)
-                mod_str = sum((s.get('parameters') or {}).get('strength', 0) for s in states)
-                mod_agi = sum((s.get('parameters') or {}).get('agility', 0) for s in states)
-                mod_int = sum((s.get('parameters') or {}).get('intellect', 0) for s in states)
-
-                mod_pat = sum((s.get('parameters') or {}).get('pat', 0) for s in states)
-                mod_mat = sum((s.get('parameters') or {}).get('mat', 0) for s in states)
-                mod_pdf = sum((s.get('parameters') or {}).get('pdf', 0) for s in states)
-                mod_mdf = sum((s.get('parameters') or {}).get('mdf', 0) for s in states)
-
-                mod_max_hp = sum((s.get('parameters') or {}).get('max_hp', 0) for s in states)
-                mod_max_mana = sum((s.get('parameters') or {}).get('max_mana', 0) for s in states)
+            states = cur.fetchall()
+            mod_body = sum((s['parameters'] or {}).get('body', 0) for s in states)
+            mod_str = sum((s['parameters'] or {}).get('strength', 0) for s in states)
+            mod_agi = sum((s['parameters'] or {}).get('agility', 0) for s in states)
+            mod_int = sum((s['parameters'] or {}).get('intellect', 0) for s in states)
 
             # 3. Вычислить новые базовые значения (переданные итоговые - модификаторы)
             new_base_body = update.body - mod_body
@@ -362,3 +347,59 @@ def update_player_stats(user_id: str, update: StatsUpdate):
     # После обновления базовых статов пересчитываем производные
     recalc_derived_stats(user_id)
     return {"success": True}
+
+@router.post("/equip")
+def equip_item(req: EquipRequest):
+    with get_db() as conn:
+        with conn.cursor() as cur:
+            # 1. Проверить наличие предмета в инвентаре
+            cur.execute("SELECT quantity FROM inventory WHERE user_id = %s AND item_id = %s", (req.user_id, req.item_id))
+            inv_row = cur.fetchone()
+            if not inv_row or inv_row['quantity'] < 1:
+                raise HTTPException(400, "Предмет не найден в инвентаре")
+
+            # 2. Проверить, что предмет экипируемый (класс в списке)
+            cur.execute("SELECT class FROM items WHERE id = %s", (req.item_id,))
+            item_row = cur.fetchone()
+            if not item_row:
+                raise HTTPException(404, "Предмет не найден")
+            allowed_classes = ['weapon', 'helmet', 'armor', 'leggings', 'bracers', 'accessories', 'book', 'pets']
+            if item_row['class'] not in allowed_classes:
+                raise HTTPException(400, "Этот предмет нельзя экипировать")
+
+            # 3. Проверить, занят ли слот
+            cur.execute("SELECT item_id FROM player_equipment WHERE user_id = %s AND slot = %s", (req.user_id, req.slot))
+            old_item = cur.fetchone()
+
+            # 4. Если слот занят – вернуть старый предмет в инвентарь
+            if old_item:
+                old_item_id = old_item['item_id']
+                cur.execute("""
+                    INSERT INTO inventory (user_id, item_id, quantity)
+                    VALUES (%s, %s, 1)
+                    ON CONFLICT (user_id, item_id) DO UPDATE SET quantity = inventory.quantity + 1
+                """, (req.user_id, old_item_id))
+                # Удалить старую запись экипировки
+                cur.execute("DELETE FROM player_equipment WHERE user_id = %s AND slot = %s", (req.user_id, req.slot))
+
+            # 5. Удалить экипируемый предмет из инвентаря (одну штуку)
+            remove_item_from_inventory(req.user_id, req.item_id, 1)
+
+            # 6. Вставить новый предмет в экипировку
+            cur.execute("INSERT INTO player_equipment (user_id, slot, item_id) VALUES (%s, %s, %s)", (req.user_id, req.slot, req.item_id))
+
+            conn.commit()
+            return {"success": True}
+
+@router.get("/equipment/{user_id}")
+def get_equipment(user_id: str):
+    with get_db() as conn:
+        with conn.cursor() as cur:
+            cur.execute("""
+                SELECT slot, item_id, i.name, i.icon
+                FROM player_equipment pe
+                JOIN items i ON pe.item_id = i.id
+                WHERE pe.user_id = %s
+            """, (user_id,))
+            rows = cur.fetchall()
+            return {"equipment": rows}

@@ -252,3 +252,22 @@ def add_exp_and_coins(user_id: str, exp_to_add: int = 0, coins_to_add: int = 0):
     if new_level > current_level:
         recalc_derived_stats(user_id)
     return True
+
+def get_equipment_stats(user_id: str):
+    """Возвращает суммарные бонусы от всей экипировки игрока."""
+    with get_db() as conn:
+        with conn.cursor() as cur:
+            cur.execute("""
+                SELECT i.strength, i.agility, i.intellect, i.body
+                FROM player_equipment pe
+                JOIN items i ON pe.item_id = i.id
+                WHERE pe.user_id = %s
+            """, (user_id,))
+            rows = cur.fetchall()
+            total = {'strength': 0, 'agility': 0, 'intellect': 0, 'body': 0}
+            for row in rows:
+                total['strength'] += row['strength'] or 0
+                total['agility'] += row['agility'] or 0
+                total['intellect'] += row['intellect'] or 0
+                total['body'] += row['body'] or 0
+            return total
