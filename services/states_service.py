@@ -66,15 +66,15 @@ def _apply_effect(user_id: str, state_key: str):
     """Применяет только одноразовые эффекты (урон). Не меняет базовые статы."""
     info = STATE_INFO[state_key]
     if state_key == 'exhaustion':
-    with get_db() as conn:
-        with conn.cursor() as cur:
-            cur.execute("""
-                UPDATE player_stats
-                SET current_hp = GREATEST(current_hp + %s, 0),
-                    current_mana = GREATEST(current_mana + %s, 0)
-                WHERE user_id = %s
-            """, (info['damage_hp'], info['damage_mana'], user_id))
-            conn.commit()
+        with get_db() as conn:
+            with conn.cursor() as cur:
+                cur.execute("""
+                    UPDATE player_stats
+                    SET current_hp = GREATEST(current_hp + %s, 0),
+                        current_mana = GREATEST(current_mana + %s, 0)
+                    WHERE user_id = %s
+                """, (info['damage_hp'], info['damage_mana'], user_id))
+                conn.commit()
     # Для всех остальных состояний – ничего не делаем, модификаторы уже в parameters
 
 def remove_state(user_id: str, state_key: str):
