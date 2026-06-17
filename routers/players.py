@@ -233,8 +233,6 @@ def get_player_stats(user_id: str):
             mod_mat = sum((s['parameters'] or {}).get('mat', 0) for s in states)
             mod_pdf = sum((s['parameters'] or {}).get('pdf', 0) for s in states)
             mod_mdf = sum((s['parameters'] or {}).get('mdf', 0) for s in states)
-            mod_max_hp = sum((s['parameters'] or {}).get('max_hp', 0) for s in states)
-            mod_max_mana = sum((s['parameters'] or {}).get('max_mana', 0) for s in states)
 
             # Итоговые базовые статы
             total_body = base['base_body'] + mod_body
@@ -244,8 +242,8 @@ def get_player_stats(user_id: str):
 
             # Производные характеристики
             level = base['level']
-            max_hp = 100 + (level - 1) * 10 + total_body * 10 + mod_max_hp
-            max_mana = 100 + (level - 1) * 10 + total_int * 10 + mod_max_mana
+            max_hp = 100 + (level - 1) * 10 + total_body * 10
+            max_mana = 100 + (level - 1) * 10 + total_int * 10 
             pat = total_str * 5 + mod_pat
             mat = total_int * 5 + mod_mat
             sp = total_int * 5

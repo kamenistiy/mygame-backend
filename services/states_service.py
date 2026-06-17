@@ -6,13 +6,10 @@ from services.player_service import recalc_derived_stats
 # Словарь с данными состояний (иконки, типы)
 STATE_INFO = {
     'exhaustion': {
-    'name': 'Истощение',
-    'type': 'debuff',
-    'icon_class': 'state-exhaustion',
     'duration': 10,
     'modifiers': {
-        'max_hp': -50,
-        'max_mana': -50
+        'hp_delta': -50,
+        'mana_delta': -50
     }
     },
     'weakness': {
@@ -36,55 +33,35 @@ STATE_INFO = {
 }
 
 def apply_state(user_id: str, state_key: str, duration_seconds: int = 10):
-
-    print("\n==============================")
-    print("APPLY_STATE START")
-    print("USER:", user_id)
-    print("STATE:", state_key)
-    print("==============================")
-
     with get_db() as conn:
         with conn.cursor() as cur:
 
-            expires_at = datetime.now(timezone.utc) + timedelta(
-                seconds=duration_seconds
-            )
+            expires_at = datetime.now(timezone.utc) + timedelta(seconds=duration_seconds)
 
             info = STATE_INFO.get(state_key, {})
             modifiers = info.get('modifiers', {})
 
             parameters_json = json.dumps(modifiers)
 
-            # Удаляем старое состояние
             cur.execute("""
                 DELETE FROM player_states
-                WHERE user_id = %s
-                  AND state_key = %s
+                WHERE user_id = %s AND state_key = %s
             """, (user_id, state_key))
 
-            # Создаем новое состояние
             cur.execute("""
                 INSERT INTO player_states
-                (
-                    user_id,
-                    state_key,
-                    expires_at,
-                    parameters
-                )
+                (user_id, state_key, expires_at, parameters)
                 VALUES (%s, %s, %s, %s)
-            """,
-            (
+            """, (
                 user_id,
                 state_key,
                 expires_at,
                 parameters_json
             ))
 
-            conn.commit()
+            apply_effect(user_id, state_key)
 
-            print("STATE INSERTED")
-            print("APPLY_STATE COMMIT OK")
-            print("==============================\n")
+            conn.commit()
 
 def remove_state(user_id: str, state_key: str):
     # Никаких изменений базовых статов!
@@ -99,16 +76,30 @@ def remove_state(user_id: str, state_key: str):
     # Если это exhaustion – не нужно ничего откатывать (урон уже нанесён)
 
 def check_expired_states(user_id: str):
-    """Проверить истекшие состояния и снять их."""
     with get_db() as conn:
         with conn.cursor() as cur:
-            cur.execute(
-                "SELECT state_key FROM player_states WHERE user_id = %s AND expires_at < NOW()",
-                (user_id,)
-            )
+
+            cur.execute("""
+                SELECT state_key
+                FROM player_states
+                WHERE user_id = %s AND expires_at < NOW()
+            """, (user_id,))
+
             expired = cur.fetchall()
+
             for row in expired:
-                remove_state(user_id, row['state_key'])
+                state_key = row['state_key']
+
+                # 🔴 ВОТ ОТКАТ
+                on_expire_state(user_id, state_key)
+
+                # удалить состояние
+                cur.execute("""
+                    DELETE FROM player_states
+                    WHERE user_id = %s AND state_key = %s
+                """, (user_id, state_key))
+
+            conn.commit()
 
 def get_active_states(user_id: str):
     """Вернуть список активных состояний (expires_at > NOW()) без удаления записей."""
@@ -143,3 +134,31 @@ def clean_expired_states():
             cur.execute("DELETE FROM player_states WHERE expires_at < NOW()")
             conn.commit()
             return cur.rowcount
+
+def apply_effect(user_id: str, state_key: str):
+    with get_db() as conn:
+        with conn.cursor() as cur:
+
+            if state_key == "exhaustion":
+                cur.execute("""
+                    UPDATE player_stats
+                    SET current_hp = GREATEST(current_hp - 50, 0),
+                        current_mana = GREATEST(current_mana - 50, 0)
+                    WHERE user_id = %s
+                """, (user_id,))
+
+            conn.commit()
+
+def on_expire_state(user_id: str, state_key: str):
+    with get_db() as conn:
+        with conn.cursor() as cur:
+
+            if state_key == "exhaustion":
+                cur.execute("""
+                    UPDATE player_stats
+                    SET current_hp = LEAST(current_hp + 50, max_hp),
+                        current_mana = LEAST(current_mana + 50, max_mana)
+                    WHERE user_id = %s
+                """, (user_id,))
+
+            conn.commit()
