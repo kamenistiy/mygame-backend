@@ -6,13 +6,12 @@ from services.player_service import recalc_derived_stats
 # Словарь с данными состояний (иконки, типы)
 STATE_INFO = {
     'exhaustion': {
-        'name': 'Истощение',
-        'type': 'debuff',
-        'icon_class': 'state-exhaustion',  # будет использовано в CSS
-        'apply_effect': 'damage',          # наносит урон при применении
-        'damage_hp': -50,
-        'damage_mana': -50,
-    },
+    'duration': 10,
+    'modifiers': {
+        'max_hp': -50,
+        'max_mana': -50
+    }
+},
     'weakness': {
         'name': 'Слабость',
         'type': 'debuff',
@@ -34,6 +33,7 @@ STATE_INFO = {
 }
 
 def apply_state(user_id: str, state_key: str, duration_seconds: int = 10):
+
     print("\n==============================")
     print("APPLY_STATE START")
     print("USER:", user_id)
@@ -43,135 +43,45 @@ def apply_state(user_id: str, state_key: str, duration_seconds: int = 10):
     with get_db() as conn:
         with conn.cursor() as cur:
 
-            cur.execute(
-                """
-                SELECT expires_at
-                FROM player_states
-                WHERE user_id = %s
-                  AND state_key = %s
-                """,
-                (user_id, state_key)
-            )
-
-            existing = cur.fetchone()
-
-            print("EXISTING STATE:", existing)
-
             expires_at = datetime.now(timezone.utc) + timedelta(
                 seconds=duration_seconds
             )
 
             info = STATE_INFO.get(state_key, {})
             modifiers = info.get('modifiers', {})
+
             parameters_json = json.dumps(modifiers)
 
-            if existing:
-                print("STATE ALREADY EXISTS -> UPDATE TIMER")
+            # Удаляем старое состояние
+            cur.execute("""
+                DELETE FROM player_states
+                WHERE user_id = %s
+                  AND state_key = %s
+            """, (user_id, state_key))
 
-                cur.execute(
-                    """
-                    UPDATE player_states
-                    SET expires_at = %s
-                    WHERE user_id = %s
-                      AND state_key = %s
-                    """,
-                    (expires_at, user_id, state_key)
+            # Создаем новое состояние
+            cur.execute("""
+                INSERT INTO player_states
+                (
+                    user_id,
+                    state_key,
+                    expires_at,
+                    parameters
                 )
-
-                print("UPDATED ROWS:", cur.rowcount)
-
-            else:
-                print("NEW STATE -> INSERT")
-
-                cur.execute(
-                    """
-                    INSERT INTO player_states
-                    (
-                        user_id,
-                        state_key,
-                        expires_at,
-                        parameters
-                    )
-                    VALUES (%s, %s, %s, %s)
-                    """,
-                    (
-                        user_id,
-                        state_key,
-                        expires_at,
-                        parameters_json
-                    )
-                )
-
-                print("STATE INSERTED")
-                print("CALLING _apply_effect()")
-
-                _apply_effect(user_id, state_key)
+                VALUES (%s, %s, %s, %s)
+            """,
+            (
+                user_id,
+                state_key,
+                expires_at,
+                parameters_json
+            ))
 
             conn.commit()
 
+            print("STATE INSERTED")
             print("APPLY_STATE COMMIT OK")
             print("==============================\n")
-
-def _apply_effect(user_id: str, state_key: str):
-    print("\n>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>")
-    print("_apply_effect CALLED")
-    print("USER:", user_id)
-    print("STATE:", state_key)
-    print("<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<")
-
-    info = STATE_INFO[state_key]
-
-    if state_key == 'exhaustion':
-
-        print("EXHAUSTION EFFECT START")
-        print("HP DELTA:", info['damage_hp'])
-        print("MANA DELTA:", info['damage_mana'])
-
-        with get_db() as conn:
-            with conn.cursor() as cur:
-
-                cur.execute("""
-                    SELECT current_hp,
-                           current_mana
-                    FROM player_stats
-                    WHERE user_id = %s
-                """, (user_id,))
-
-                before = cur.fetchone()
-
-                print("BEFORE UPDATE:", before)
-
-                cur.execute("""
-                    UPDATE player_stats
-                    SET current_hp = GREATEST(current_hp + %s, 0),
-                        current_mana = GREATEST(current_mana + %s, 0)
-                    WHERE user_id = %s
-                """,
-                (
-                    info['damage_hp'],
-                    info['damage_mana'],
-                    user_id
-                ))
-
-                print("ROWS UPDATED:", cur.rowcount)
-
-                conn.commit()
-
-                cur.execute("""
-                    SELECT current_hp,
-                           current_mana
-                    FROM player_stats
-                    WHERE user_id = %s
-                """, (user_id,))
-
-                after = cur.fetchone()
-
-                print("AFTER UPDATE:", after)
-                print("EXHAUSTION EFFECT END")
-
-    else:
-        print("NO ONE-TIME EFFECT FOR:", state_key)
-    # Для всех остальных состояний – ничего не делаем, модификаторы уже в parameters
 
 def remove_state(user_id: str, state_key: str):
     # Никаких изменений базовых статов!
