@@ -6,6 +6,9 @@ from services.player_service import recalc_derived_stats
 # Словарь с данными состояний (иконки, типы)
 STATE_INFO = {
     'exhaustion': {
+    'name': 'Истощение',
+    'type': 'debuff',
+    'icon_class': 'state-exhaustion',
     'duration': 10,
     'modifiers': {
         'hp_delta': -50,
