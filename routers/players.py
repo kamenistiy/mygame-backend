@@ -283,6 +283,18 @@ def get_player_stats(user_id: str):
             current_mana = min(base['current_mana'], max_mana)
 
             return {
+                "base_body": base['base_body'],
+                "equip_body": equip_stats['body'],
+                "mod_body": mod_body,
+                "base_strength": base['base_strength'],
+                "equip_strength": equip_stats['strength'],
+                "mod_strength": mod_str,
+                "base_agility": base['base_agility'],
+                "equip_agility": equip_stats['agility'],
+                "mod_agility": mod_agi,
+                "base_intellect": base['base_intellect'],
+                "equip_intellect": equip_stats['intellect'],
+                "mod_intellect": mod_int,
                 "current_hp": current_hp,
                 "max_hp": max_hp,
                 "current_mana": current_mana,
