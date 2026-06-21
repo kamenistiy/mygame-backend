@@ -166,4 +166,12 @@ def get_junk_inventory(user_id: str):
     conn.close()
     return items
 
-
+@router.get("/items/{item_id}")
+def get_item(item_id: str):
+    with get_db() as conn:
+        with conn.cursor() as cur:
+            cur.execute("SELECT * FROM items WHERE id = %s", (item_id,))
+            row = cur.fetchone()
+            if not row:
+                raise HTTPException(404, "Item not found")
+            return dict(row)
