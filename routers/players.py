@@ -38,6 +38,10 @@ class EquipRequest(BaseModel):
     item_id: str
     slot: str
 
+class UnequipRequest(BaseModel):
+    user_id: str
+    slot: str
+
 @router.get("/player/{user_id}")
 def get_player(user_id: str):
     if user_id == "null":
@@ -404,3 +408,28 @@ def get_equipment(user_id: str):
             """, (user_id,))
             rows = cur.fetchall()
             return {"equipment": rows}
+
+@router.post("/unequip")
+def unequip_item(req: UnequipRequest):
+    with get_db() as conn:
+        with conn.cursor() as cur:
+            # 1. Проверяем, что слот занят
+            cur.execute("SELECT item_id FROM player_equipment WHERE user_id = %s AND slot = %s", (req.user_id, req.slot))
+            row = cur.fetchone()
+            if not row:
+                raise HTTPException(400, "В этом слоте нет предмета")
+
+            item_id = row['item_id']
+
+            # 2. Удаляем запись из экипировки
+            cur.execute("DELETE FROM player_equipment WHERE user_id = %s AND slot = %s", (req.user_id, req.slot))
+
+            # 3. Добавляем предмет обратно в инвентарь
+            cur.execute("""
+                INSERT INTO inventory (user_id, item_id, quantity)
+                VALUES (%s, %s, 1)
+                ON CONFLICT (user_id, item_id) DO UPDATE SET quantity = inventory.quantity + 1
+            """, (req.user_id, item_id))
+
+            conn.commit()
+            return {"success": True}
