@@ -12,7 +12,8 @@ from services.player_service import (
     add_default_avatars_for_user,
     recalc_derived_stats,
     required_exp,
-    apply_regen
+    apply_regen,
+    get_equipment_stats
 )
 from services.inventory_service import remove_item_from_inventory
 from services.achievement_service import grant_achievement_if_not_obtained, update_achievement_progress_logic
