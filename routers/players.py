@@ -380,7 +380,7 @@ def equip_item(req: EquipRequest):
             item_row = cur.fetchone()
             if not item_row:
                 raise HTTPException(404, "Предмет не найден")
-            allowed_classes = ['weapon', 'helmet', 'armor', 'leggings', 'bracers', 'accessories', 'book', 'pets']
+            allowed_classes = ['weapon', 'helmet', 'armor', 'leggings', 'bracers', 'accessories', 'book', 'pets', 'boots']
             if item_row['class'] not in allowed_classes:
                 raise HTTPException(400, "Этот предмет нельзя экипировать")
 
