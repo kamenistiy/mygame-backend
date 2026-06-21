@@ -105,10 +105,7 @@ def use_item_logic(user_id: str, req, conn, cur):
 
         conn.commit()
 
-        # Пересчитываем производные характеристики
         recalc_derived_stats(user_id)
-
-        # Удаляем использованный предмет из инвентаря
         remove_item_from_inventory(user_id, req.item_id, req.quantity)
 
         add_notification(
@@ -120,45 +117,50 @@ def use_item_logic(user_id: str, req, conn, cur):
 
         return {"success": True, "message": "Stats reset"}
 
-    # === ARCHER BOX (сундук с экипировкой лучника) ===
-if req.item_id == 'archer_box':
-    cur.execute("SELECT quantity FROM inventory WHERE user_id = %s AND item_id = %s", (user_id, req.item_id))
-    row = cur.fetchone()
-    if not row or row['quantity'] < 1:
-        raise HTTPException(status_code=400, detail="Недостаточно предметов")
+    # === ARCHER BOX ===
+    if req.item_id == 'archer_box':
+        cur.execute(
+            "SELECT quantity FROM inventory WHERE user_id = %s AND item_id = %s",
+            (user_id, req.item_id)
+        )
+        row = cur.fetchone()
+        if not row or row['quantity'] < 1:
+            raise HTTPException(status_code=400, detail="Недостаточно предметов")
 
-    remove_item_from_inventory(user_id, req.item_id, 1)
+        remove_item_from_inventory(user_id, req.item_id, 1)
 
-    # Список предметов и их количества (можно менять под любые нужды)
-    items_to_give = [
-        {"id": "novice_bow", "qty": 1},
-        {"id": "novice_helm", "qty": 1},
-        {"id": "novice_armor1", "qty": 1},
-        {"id": "novice_boots1", "qty": 1},
-    ]
+        items_to_give = [
+            {"id": "novice_bow", "qty": 1},
+            {"id": "novice_helm", "qty": 1},
+            {"id": "novice_armor1", "qty": 1},
+            {"id": "novice_boots1", "qty": 1},
+        ]
 
-    for item in items_to_give:
-        cur.execute("""
-            INSERT INTO inventory (user_id, item_id, quantity)
-            VALUES (%s, %s, %s)
-            ON CONFLICT (user_id, item_id)
-            DO UPDATE SET quantity = inventory.quantity + %s
-        """, (user_id, item["id"], item["qty"], item["qty"]))
-    conn.commit()
+        for item_data in items_to_give:
+            cur.execute("""
+                INSERT INTO inventory (user_id, item_id, quantity)
+                VALUES (%s, %s, %s)
+                ON CONFLICT (user_id, item_id)
+                DO UPDATE SET quantity = inventory.quantity + %s
+            """, (user_id, item_data["id"], item_data["qty"], item_data["qty"]))
 
-    # Получаем информацию о предметах
-    ids = [item["id"] for item in items_to_give]
-    placeholders = ','.join(['%s'] * len(ids))
-    cur.execute(f"SELECT id, name, icon FROM items WHERE id IN ({placeholders})", ids)
-    rows = cur.fetchall()
-    # Сопоставляем количество из items_to_give
-    items_info = []
-    for r in rows:
-        qty = next((item["qty"] for item in items_to_give if item["id"] == r["id"]), 1)
-        items_info.append({"id": r["id"], "name": r["name"], "icon": r["icon"], "quantity": qty})
+        conn.commit()
 
-    return {
-        "success": True,
-        "message": "Вы использовали Снаряжение лучника",
-        "items": items_info
-    }
+        ids = [item["id"] for item in items_to_give]
+        placeholders = ','.join(['%s'] * len(ids))
+        cur.execute(f"SELECT id, name, icon FROM items WHERE id IN ({placeholders})", ids)
+        rows = cur.fetchall()
+
+        items_info = []
+        for r in rows:
+            qty = next((item["qty"] for item in items_to_give if item["id"] == r["id"]), 1)
+            items_info.append({"id": r["id"], "name": r["name"], "icon": r["icon"], "quantity": qty})
+
+        return {
+            "success": True,
+            "message": "Вы использовали Снаряжение лучника",
+            "items": items_info
+        }
+
+    # Если ни одно условие не сработало
+    raise HTTPException(status_code=400, detail="Не реализовано")
