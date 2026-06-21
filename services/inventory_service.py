@@ -5,6 +5,35 @@ from datetime import datetime
 from services.notification_service import add_notification
 from services.player_service import recalc_derived_stats
 
+# Словарь: что выдаёт каждый сундук (ID должны существовать в таблице items)
+CHEST_ITEMS = {
+    "archer_box": [
+        {"id": "novice_bow", "qty": 1},
+        {"id": "novice_helm", "qty": 1},
+        {"id": "novice_armor1", "qty": 1},
+        {"id": "novice_boots1", "qty": 1},
+    ],
+    "warrior_box": [
+        {"id": "novice_sword", "qty": 1},
+        {"id": "novice_helm", "qty": 1},
+        {"id": "novice_armor1", "qty": 1},
+        {"id": "novice_boots1", "qty": 1},
+    ],
+    "musician_box": [
+        {"id": "novice_muse", "qty": 1},
+        {"id": "novice_hat", "qty": 1},
+        {"id": "novice_armor3", "qty": 1},
+        {"id": "novice_boots3", "qty": 1},
+    ],
+    "mage_box": [
+        {"id": "novice_staff", "qty": 1},
+        {"id": "novice_hood", "qty": 1},
+        {"id": "novice_armor2", "qty": 1},
+        {"id": "novice_boots2", "qty": 1},
+    ],
+}
+
+
 def remove_item_from_inventory(user_id: str, item_id: str, quantity: int = 1) -> bool:
     conn = get_db()
     cur = conn.cursor()
@@ -117,8 +146,9 @@ def use_item_logic(user_id: str, req, conn, cur):
 
         return {"success": True, "message": "Stats reset"}
 
-    # === ARCHER BOX ===
-    if req.item_id == 'archer_box':
+    # === ОБЩАЯ ЛОГИКА ДЛЯ ВСЕХ СУНДУКОВ ===
+    if req.item_id in CHEST_ITEMS:
+        # Проверяем наличие сундука
         cur.execute(
             "SELECT quantity FROM inventory WHERE user_id = %s AND item_id = %s",
             (user_id, req.item_id)
@@ -127,15 +157,13 @@ def use_item_logic(user_id: str, req, conn, cur):
         if not row or row['quantity'] < 1:
             raise HTTPException(status_code=400, detail="Недостаточно предметов")
 
+        # Удаляем один сундук
         remove_item_from_inventory(user_id, req.item_id, 1)
 
-        items_to_give = [
-            {"id": "novice_bow", "qty": 1},
-            {"id": "novice_helm", "qty": 1},
-            {"id": "novice_armor1", "qty": 1},
-            {"id": "novice_boots1", "qty": 1},
-        ]
+        # Получаем список предметов для этого сундука
+        items_to_give = CHEST_ITEMS[req.item_id]
 
+        # Добавляем каждый предмет в инвентарь
         for item_data in items_to_give:
             cur.execute("""
                 INSERT INTO inventory (user_id, item_id, quantity)
@@ -146,6 +174,7 @@ def use_item_logic(user_id: str, req, conn, cur):
 
         conn.commit()
 
+        # Получаем информацию о добавленных предметах (названия и иконки)
         ids = [item["id"] for item in items_to_give]
         placeholders = ','.join(['%s'] * len(ids))
         cur.execute(f"SELECT id, name, icon FROM items WHERE id IN ({placeholders})", ids)
@@ -156,9 +185,12 @@ def use_item_logic(user_id: str, req, conn, cur):
             qty = next((item["qty"] for item in items_to_give if item["id"] == r["id"]), 1)
             items_info.append({"id": r["id"], "name": r["name"], "icon": r["icon"], "quantity": qty})
 
+        # Название сундука для сообщения
+        chest_name = item['name']
+
         return {
             "success": True,
-            "message": "Вы использовали Снаряжение лучника",
+            "message": f"Вы использовали {chest_name}",
             "items": items_info
         }
 
