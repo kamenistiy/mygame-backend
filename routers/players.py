@@ -163,17 +163,18 @@ def update_player(user_id: str, update: PlayerUpdate):
 
             # Если уровень повысился – обновляем характеристики
             if new_level > current_level:
-    with get_db() as conn_stats:
-        with conn_stats.cursor() as cur_stats:
-            level_diff = new_level - current_level
-            cur_stats.execute("""
-                UPDATE player_stats
-                SET free_stat_points = free_stat_points + %s
-                WHERE user_id = %s
-            """, (level_diff * 2, user_id))
-            conn_stats.commit()
-            recalc_derived_stats(user_id)
-            check_expired_states(user_id)
+                with get_db() as conn_stats:
+                    with conn_stats.cursor() as cur_stats:
+                        level_diff = new_level - current_level
+                        cur_stats.execute("""
+                            UPDATE player_stats
+                            SET free_stat_points = free_stat_points + %s
+                            WHERE user_id = %s
+                        """, (level_diff * 2, user_id))
+                        conn_stats.commit()
+                        recalc_derived_stats(user_id)
+                        check_expired_states(user_id)
+            return updated
 
 
 @router.post("/profile/update")
