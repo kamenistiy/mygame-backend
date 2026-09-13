@@ -163,22 +163,17 @@ def update_player(user_id: str, update: PlayerUpdate):
 
             # Если уровень повысился – обновляем характеристики
             if new_level > current_level:
-                with get_db() as conn_stats:
-                    with conn_stats.cursor() as cur_stats:
-                        level_diff = new_level - current_level
-                        cur_stats.execute("""
-                            UPDATE player_stats
-                            SET max_hp = max_hp + %s,
-                                current_hp = current_hp + %s,
-                                max_mana = max_mana + %s,
-                                current_mana = current_mana + %s,
-                                free_stat_points = free_stat_points + %s
-                            WHERE user_id = %s
-                        """, (level_diff * 10, level_diff * 10, level_diff * 10, level_diff * 10, level_diff * 2, user_id))
-                        conn_stats.commit()
-                        recalc_derived_stats(user_id)
-                        check_expired_states(user_id)
-            return updated
+    with get_db() as conn_stats:
+        with conn_stats.cursor() as cur_stats:
+            level_diff = new_level - current_level
+            cur_stats.execute("""
+                UPDATE player_stats
+                SET free_stat_points = free_stat_points + %s
+                WHERE user_id = %s
+            """, (level_diff * 2, user_id))
+            conn_stats.commit()
+            recalc_derived_stats(user_id)
+            check_expired_states(user_id)
 
 
 @router.post("/profile/update")
@@ -214,104 +209,73 @@ def list_players():
 
 @router.get("/player/stats/{user_id}")
 def get_player_stats(user_id: str):
-    # 1. Применяем регенерацию HP/MP
+    # 1. Применяем регенерацию HP/MP (max_hp уже актуален в БД после recalc)
     apply_regen(user_id)
 
     with get_db() as conn:
         with conn.cursor() as cur:
-            # 2. Базовые статы
             cur.execute("""
-                SELECT base_body, base_strength, base_agility, base_intellect,
-                       current_hp, max_hp, current_mana, max_mana,
-                       current_energy, max_energy, free_stat_points, p.level
+                SELECT
+                    base_body, base_strength, base_agility, base_intellect,
+                    equip_body, equip_strength, equip_agility, equip_intellect,
+                    mod_body, mod_strength, mod_agility, mod_intellect,
+                    body_total, strength_total, agility_total, intellect_total,
+                    current_hp, max_hp, current_mana, max_mana,
+                    current_energy, max_energy, free_stat_points,
+                    pdf, mdf, pat, mat, ddg, acc, sp, crft, spd, gat, awr,
+                    fame, rep, ins, pvp, pve, unic, zone,
+                    p.level
                 FROM player_stats ps
                 JOIN players p ON p.id = ps.user_id
                 WHERE ps.user_id = %s
             """, (user_id,))
-            base = cur.fetchone()
-            if not base:
+            row = cur.fetchone()
+            if not row:
                 raise HTTPException(404, "Stats not found")
 
-            # 3. Получаем АКТИВНЫЕ СОСТОЯНИЯ С ПАРАМЕТРАМИ (исправлено)
-            cur.execute("""
-                SELECT state_key, parameters
-                FROM player_states
-                WHERE user_id = %s AND expires_at > NOW()
-            """, (user_id,))
-            states_rows = cur.fetchall()
-
-            # 4. Суммируем модификаторы состояний
-            mod_body = mod_str = mod_agi = mod_int = 0
-            mod_pat = mod_mat = mod_pdf = mod_mdf = 0
-            for s in states_rows:
-                params = s['parameters'] or {}
-                mod_body += params.get('body', 0)
-                mod_str += params.get('strength', 0)
-                mod_agi += params.get('agility', 0)
-                mod_int += params.get('intellect', 0)
-                mod_pat += params.get('pat', 0)
-                mod_mat += params.get('mat', 0)
-                mod_pdf += params.get('pdf', 0)
-                mod_mdf += params.get('mdf', 0)
-
-            # 5. Бонусы от экипировки
-            equip_stats = get_equipment_stats(user_id)
-
-            # 6. ИТОГОВЫЕ базовые статы (с учётом состояний и экипировки)
-            total_body = base['base_body'] + mod_body + equip_stats['body']
-            total_str = base['base_strength'] + mod_str + equip_stats['strength']
-            total_agi = base['base_agility'] + mod_agi + equip_stats['agility']
-            total_int = base['base_intellect'] + mod_int + equip_stats['intellect']
-
-            # 7. Производные характеристики
-            level = base['level']
-            max_hp = 100 + (level - 1) * 10 + total_body * 10
-            max_mana = 100 + (level - 1) * 10 + total_int * 10
-            pat = total_str * 5 + mod_pat
-            mat = total_int * 5 + mod_mat
-            sp = total_int * 5
-            pdf = total_body * 5 + mod_pdf
-            mdf = total_body * 5 + mod_mdf
-            awr = total_body * 5
-            spd = total_agi * 10 - total_body * 5
-            acc = total_agi * 5
-            ddg = total_agi * 5
-            gat = total_str * 5
-
-            # 8. Корректировка текущих HP/MP
-            current_hp = min(base['current_hp'], max_hp)
-            current_mana = min(base['current_mana'], max_mana)
-
             return {
-                "base_body": base['base_body'],
-                "equip_body": equip_stats['body'],
-                "mod_body": mod_body,
-                "base_strength": base['base_strength'],
-                "equip_strength": equip_stats['strength'],
-                "mod_strength": mod_str,
-                "base_agility": base['base_agility'],
-                "equip_agility": equip_stats['agility'],
-                "mod_agility": mod_agi,
-                "base_intellect": base['base_intellect'],
-                "equip_intellect": equip_stats['intellect'],
-                "mod_intellect": mod_int,
-                "current_hp": current_hp,
-                "max_hp": max_hp,
-                "current_mana": current_mana,
-                "max_mana": max_mana,
-                "current_energy": base['current_energy'],
-                "max_energy": base['max_energy'],
-                "body": total_body,
-                "strength": total_str,
-                "agility": total_agi,
-                "intellect": total_int,
-                "free_stat_points": base['free_stat_points'],
-                "pdf": pdf, "mdf": mdf, "pat": pat, "mat": mat,
-                "ddg": ddg, "acc": acc, "sp": sp,
-                "crft": 0,
-                "spd": spd, "gat": gat, "awr": awr,
-                "fame": 0, "rep": 0, "ins": 0,
-                "pvp": 0, "pve": 0, "unic": 0, "zone": 0
+                # Базовые (за уровень)
+                "base_body": row['base_body'],
+                "base_strength": row['base_strength'],
+                "base_agility": row['base_agility'],
+                "base_intellect": row['base_intellect'],
+                # Бонусы экипировки
+                "equip_body": row['equip_body'],
+                "equip_strength": row['equip_strength'],
+                "equip_agility": row['equip_agility'],
+                "equip_intellect": row['equip_intellect'],
+                # Модификаторы состояний
+                "mod_body": row['mod_body'],
+                "mod_strength": row['mod_strength'],
+                "mod_agility": row['mod_agility'],
+                "mod_intellect": row['mod_intellect'],
+                # Итоговые атрибуты
+                "body": row['body_total'],
+                "strength": row['strength_total'],
+                "agility": row['agility_total'],
+                "intellect": row['intellect_total'],
+                # HP / MP / Energy
+                "current_hp": row['current_hp'],
+                "max_hp": row['max_hp'],
+                "current_mana": row['current_mana'],
+                "max_mana": row['max_mana'],
+                "current_energy": row['current_energy'],
+                "max_energy": row['max_energy'],
+                "free_stat_points": row['free_stat_points'],
+                # Производные
+                "pdf": row['pdf'], "mdf": row['mdf'],
+                "pat": row['pat'], "mat": row['mat'],
+                "ddg": row['ddg'], "acc": row['acc'], "sp": row['sp'],
+                "crft": row['crft'] or 0,
+                "spd": row['spd'], "gat": row['gat'], "awr": row['awr'],
+                # Заслуги / свершения
+                "fame": row['fame'] or 0,
+                "rep": row['rep'] or 0,
+                "ins": row['ins'] or 0,
+                "pvp": row['pvp'] or 0,
+                "pve": row['pve'] or 0,
+                "unic": row['unic'] or 0,
+                "zone": row['zone'] or 0,
             }
         
 @router.post("/player/stats/update")
@@ -406,6 +370,7 @@ def equip_item(req: EquipRequest):
             cur.execute("INSERT INTO player_equipment (user_id, slot, item_id) VALUES (%s, %s, %s)", (req.user_id, req.slot, req.item_id))
 
             conn.commit()
+            recalc_derived_stats(req.user_id)
             return {"success": True}
 
 @router.get("/equipment/{user_id}")
@@ -444,4 +409,5 @@ def unequip_item(req: UnequipRequest):
             """, (req.user_id, item_id))
 
             conn.commit()
+            recalc_derived_stats(req.user_id)
             return {"success": True}

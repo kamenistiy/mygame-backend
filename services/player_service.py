@@ -1,6 +1,6 @@
 from datetime import datetime, timezone
 from core.db import get_db
-
+import json
 
 # ========== ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ  ==========
 def required_exp(level: int) -> int:
@@ -91,10 +91,35 @@ def apply_regen(user_id: str):
             """, (new_hp, new_mana, now, user_id))
             conn.commit()
 
-def recalc_derived_stats(user_id: str):
-    """Пересчитывает производные характеристики на основе базовых статов (без учёта временных модификаторов)."""
+def get_state_modifiers(user_id: str) -> dict:
+    """Сумма модификаторов от всех АКТИВНЫХ состояний.
+    Возвращает {'body': 1, 'pat': 10, 'pdf': -5, ...}
+    """
     with get_db() as conn:
         with conn.cursor() as cur:
+            cur.execute("""
+                SELECT parameters
+                FROM player_states
+                WHERE user_id = %s AND expires_at > NOW()
+            """, (user_id,))
+            rows = cur.fetchall()
+            total = {}
+            for row in rows:
+                params = row['parameters']
+                if isinstance(params, str):
+                    params = json.loads(params)
+                if not params:
+                    continue
+                for k, v in params.items():
+                    total[k] = total.get(k, 0) + (v or 0)
+            return total
+
+def recalc_derived_stats(user_id: str):
+    """Пересчёт ВСЕГО с учётом base + equip + mod."""
+    with get_db() as conn:
+        with conn.cursor() as cur:
+
+            # 1. База
             cur.execute("""
                 SELECT p.level,
                        ps.base_body, ps.base_strength, ps.base_agility, ps.base_intellect
@@ -105,50 +130,73 @@ def recalc_derived_stats(user_id: str):
             row = cur.fetchone()
             if not row:
                 return
+
             level = row['level']
-            base_body = row['base_body']
-            base_strength = row['base_strength']
-            base_agility = row['base_agility']
-            base_intellect = row['base_intellect']
+            base_body = row['base_body'] or 0
+            base_strength = row['base_strength'] or 0
+            base_agility = row['base_agility'] or 0
+            base_intellect = row['base_intellect'] or 0
 
-            # Формулы (без модификаторов)
-            max_hp = 100 + (level - 1) * 10 + base_body * 10
-            max_mana = 100 + (level - 1) * 10 + base_intellect * 10
-            pat = base_strength * 5
-            mat = base_intellect * 5
-            sp = base_intellect * 5
-            pdf = base_body * 5
-            mdf = base_body * 5
-            awr = base_body * 5
-            spd = base_agility * 10 - base_body * 5
-            acc = base_agility * 5
-            ddg = base_agility * 5
-            gat = base_strength * 5
+            # 2. Экипировка
+            equip = get_equipment_stats(user_id)
 
+            # 3. Состояния
+            mods = get_state_modifiers(user_id)
+            mod_body = mods.get('body', 0)
+            mod_strength = mods.get('strength', 0)
+            mod_agility = mods.get('agility', 0)
+            mod_intellect = mods.get('intellect', 0)
+
+            # 4. Итоговые АТРИБУТЫ
+            body_total      = base_body      + equip['body']      + mod_body
+            strength_total  = base_strength  + equip['strength']  + mod_strength
+            agility_total   = base_agility   + equip['agility']   + mod_agility
+            intellect_total = base_intellect + equip['intellect'] + mod_intellect
+
+            # 5. Производные = формула от итоговых + прямые бонусы экип + прямые моды состояний
+            max_hp   = 100 + (level - 1) * 10 + body_total * 10      + equip['max_hp']   + mods.get('max_hp', 0)
+            max_mana = 100 + (level - 1) * 10 + intellect_total * 10 + equip['max_mana'] + mods.get('max_mana', 0)
+            pat = strength_total * 5  + equip['pat']  + mods.get('pat', 0)
+            mat = intellect_total * 5 + equip['mat']  + mods.get('mat', 0)
+            sp  = intellect_total * 5 + equip['sp']   + mods.get('sp', 0)
+            pdf = body_total * 5      + equip['pdf']  + mods.get('pdf', 0)
+            mdf = body_total * 5      + equip['mdf']  + mods.get('mdf', 0)
+            awr = body_total * 5      + equip['awr']  + mods.get('awr', 0)
+            spd = agility_total * 10 - body_total * 5 + equip['spd'] + mods.get('spd', 0)
+            acc = agility_total * 5   + equip['acc']  + mods.get('acc', 0)
+            ddg = agility_total * 5   + equip['ddg']  + mods.get('ddg', 0)
+            gat = strength_total * 5  + equip['gat']  + mods.get('gat', 0)
+
+            # 6. Сохраняем
             cur.execute("""
                 UPDATE player_stats
-                SET max_hp = %s,
-                    max_mana = %s,
-                    pat = %s,
-                    mat = %s,
-                    sp = %s,
-                    pdf = %s,
-                    mdf = %s,
-                    awr = %s,
-                    spd = %s,
-                    acc = %s,
-                    ddg = %s,
-                    gat = %s
+                SET equip_body = %s, equip_strength = %s, equip_agility = %s, equip_intellect = %s,
+                    mod_body = %s, mod_strength = %s, mod_agility = %s, mod_intellect = %s,
+                    body_total = %s, strength_total = %s, agility_total = %s, intellect_total = %s,
+                    max_hp = %s, max_mana = %s,
+                    pat = %s, mat = %s, sp = %s,
+                    pdf = %s, mdf = %s, awr = %s,
+                    spd = %s, acc = %s, ddg = %s, gat = %s
                 WHERE user_id = %s
-            """, (max_hp, max_mana, pat, mat, sp, pdf, mdf, awr, spd, acc, ddg, gat, user_id))
+            """, (
+                equip['body'], equip['strength'], equip['agility'], equip['intellect'],
+                mod_body, mod_strength, mod_agility, mod_intellect,
+                body_total, strength_total, agility_total, intellect_total,
+                max_hp, max_mana,
+                pat, mat, sp,
+                pdf, mdf, awr,
+                spd, acc, ddg, gat,
+                user_id
+            ))
 
-            # Корректируем текущие HP/Mana, если они превышают новые максимумы
+            # 7. Обрезаем текущие HP/Mana
             cur.execute("""
                 UPDATE player_stats
                 SET current_hp = LEAST(current_hp, max_hp),
                     current_mana = LEAST(current_mana, max_mana)
                 WHERE user_id = %s
             """, (user_id,))
+
             conn.commit()
 
 
@@ -254,20 +302,23 @@ def add_exp_and_coins(user_id: str, exp_to_add: int = 0, coins_to_add: int = 0):
     return True
 
 def get_equipment_stats(user_id: str):
-    """Возвращает суммарные бонусы от всей экипировки игрока."""
     with get_db() as conn:
         with conn.cursor() as cur:
             cur.execute("""
-                SELECT i.strength, i.agility, i.intellect, i.body
+                SELECT i.strength, i.agility, i.intellect, i.body,
+                       i.pdf, i.mdf, i.pat, i.mat, i.ddg, i.acc,
+                       i.sp, i.gat, i.spd, i.awr, i.max_hp, i.max_mana
                 FROM player_equipment pe
                 JOIN items i ON pe.item_id = i.id
                 WHERE pe.user_id = %s
             """, (user_id,))
             rows = cur.fetchall()
-            total = {'strength': 0, 'agility': 0, 'intellect': 0, 'body': 0}
+            keys = ['strength', 'agility', 'intellect', 'body',
+                    'pdf', 'mdf', 'pat', 'mat', 'ddg', 'acc',
+                    'sp', 'gat', 'spd', 'awr', 'max_hp', 'max_mana']
+            total = {k: 0 for k in keys}
             for row in rows:
-                total['strength'] += row['strength'] or 0
-                total['agility'] += row['agility'] or 0
-                total['intellect'] += row['intellect'] or 0
-                total['body'] += row['body'] or 0
+                for k in keys:
+                    val = row.get(k) if isinstance(row, dict) else row[k]
+                    total[k] += val or 0
             return total

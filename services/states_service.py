@@ -65,6 +65,7 @@ def apply_state(user_id: str, state_key: str, duration_seconds: int = 10):
             apply_effect(user_id, state_key)
 
             conn.commit()
+recalc_derived_stats(user_id)
 
 def remove_state(user_id: str, state_key: str):
     # Никаких изменений базовых статов!
@@ -103,6 +104,7 @@ def check_expired_states(user_id: str):
                 """, (user_id, state_key))
 
             conn.commit()
+recalc_derived_stats(user_id)
 
 def get_active_states(user_id: str):
     with get_db() as conn:
