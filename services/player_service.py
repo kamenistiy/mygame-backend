@@ -6,7 +6,7 @@ import json
 def required_exp(level: int) -> int:
     if level == 1:
         return 20
-    return 20 * (2 ** (level - 1))
+    return int(20 * (1.5 ** (level - 1)))
 
 
 
