@@ -38,34 +38,21 @@ STATE_INFO = {
 def apply_state(user_id: str, state_key: str, duration_seconds: int = 10):
     with get_db() as conn:
         with conn.cursor() as cur:
-
             expires_at = datetime.now(timezone.utc) + timedelta(seconds=duration_seconds)
-
             info = STATE_INFO.get(state_key, {})
             modifiers = info.get('modifiers', {})
-
             parameters_json = json.dumps(modifiers)
 
+            cur.execute("DELETE FROM player_states WHERE user_id = %s AND state_key = %s",
+                        (user_id, state_key))
             cur.execute("""
-                DELETE FROM player_states
-                WHERE user_id = %s AND state_key = %s
-            """, (user_id, state_key))
-
-            cur.execute("""
-                INSERT INTO player_states
-                (user_id, state_key, expires_at, parameters)
+                INSERT INTO player_states (user_id, state_key, expires_at, parameters)
                 VALUES (%s, %s, %s, %s)
-            """, (
-                user_id,
-                state_key,
-                expires_at,
-                parameters_json
-            ))
-
+            """, (user_id, state_key, expires_at, parameters_json))
             apply_effect(user_id, state_key)
-
             conn.commit()
-recalc_derived_stats(user_id)
+
+    recalc_derived_stats(user_id)
 
 def remove_state(user_id: str, state_key: str):
     # Никаких изменений базовых статов!
@@ -82,29 +69,19 @@ def remove_state(user_id: str, state_key: str):
 def check_expired_states(user_id: str):
     with get_db() as conn:
         with conn.cursor() as cur:
-
             cur.execute("""
-                SELECT state_key
-                FROM player_states
+                SELECT state_key FROM player_states
                 WHERE user_id = %s AND expires_at < NOW()
             """, (user_id,))
-
             expired = cur.fetchall()
-
             for row in expired:
                 state_key = row['state_key']
-
-                # 🔴 ВОТ ОТКАТ
                 on_expire_state(user_id, state_key)
-
-                # удалить состояние
-                cur.execute("""
-                    DELETE FROM player_states
-                    WHERE user_id = %s AND state_key = %s
-                """, (user_id, state_key))
-
+                cur.execute("DELETE FROM player_states WHERE user_id = %s AND state_key = %s",
+                            (user_id, state_key))
             conn.commit()
-recalc_derived_stats(user_id)
+
+    recalc_derived_stats(user_id)
 
 def get_active_states(user_id: str):
     with get_db() as conn:
