@@ -162,7 +162,7 @@ def recalc_derived_stats(user_id: str):
             pdf = body_total * 5      + equip['pdf']  + mods.get('pdf', 0)
             mdf = body_total * 5      + equip['mdf']  + mods.get('mdf', 0)
             awr = body_total * 5      + equip['awr']  + mods.get('awr', 0)
-            spd = agility_total * 10 - body_total * 5 + equip['spd'] + mods.get('spd', 0)
+            spd = agility_total * 5 - body_total * 5 + equip['spd'] + mods.get('spd', 0)
             acc = agility_total * 5   + equip['acc']  + mods.get('acc', 0)
             ddg = agility_total * 5   + equip['ddg']  + mods.get('ddg', 0)
             gat = strength_total * 5  + equip['gat']  + mods.get('gat', 0)
