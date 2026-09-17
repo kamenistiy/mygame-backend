@@ -283,52 +283,52 @@ def get_player_stats(user_id: str):
 def update_player_stats(user_id: str, update: StatsUpdate):
     with get_db() as conn:
         with conn.cursor() as cur:
-            # 1. Получить текущие базовые статы
-            cur.execute("""
-                SELECT base_body, base_strength, base_agility, base_intellect
-                FROM player_stats WHERE user_id = %s
-            """, (user_id,))
-            current_base = cur.fetchone()
-            if not current_base:
-                raise HTTPException(404, "Player stats not found")
+            # Уровень — источник лимита
+            cur.execute("SELECT level FROM players WHERE id = %s", (user_id,))
+            row = cur.fetchone()
+            if not row:
+                raise HTTPException(404, "Player not found")
+            max_points = row['level'] * 2
 
-            # 2. Получить модификаторы от активных состояний (исправлено)
+            # Модификаторы активных состояний
             cur.execute("""
-                SELECT parameters
-                FROM player_states
+                SELECT parameters FROM player_states
                 WHERE user_id = %s AND expires_at > NOW()
             """, (user_id,))
             states = cur.fetchall()
             mod_body = sum((s['parameters'] or {}).get('body', 0) for s in states)
-            mod_str = sum((s['parameters'] or {}).get('strength', 0) for s in states)
-            mod_agi = sum((s['parameters'] or {}).get('agility', 0) for s in states)
-            mod_int = sum((s['parameters'] or {}).get('intellect', 0) for s in states)
+            mod_str  = sum((s['parameters'] or {}).get('strength', 0) for s in states)
+            mod_agi  = sum((s['parameters'] or {}).get('agility', 0) for s in states)
+            mod_int  = sum((s['parameters'] or {}).get('intellect', 0) for s in states)
 
-            # 3. Вычислить новые базовые значения (переданные итоговые - модификаторы)
-            new_base_body = update.body - mod_body
-            new_base_strength = update.strength - mod_str
-            new_base_agility = update.agility - mod_agi
+            new_base_body      = update.body      - mod_body
+            new_base_strength  = update.strength  - mod_str
+            new_base_agility   = update.agility   - mod_agi
             new_base_intellect = update.intellect - mod_int
 
-            # 4. Обновить базовые колонки и free_stat_points
+            if min(new_base_body, new_base_strength,
+                   new_base_agility, new_base_intellect) < 0:
+                raise HTTPException(400, "Характеристики не могут быть отрицательными")
+
+            total_invested = (new_base_body + new_base_strength
+                              + new_base_agility + new_base_intellect)
+            if total_invested > max_points:
+                raise HTTPException(400, f"Максимум вложенных очков: {max_points}")
+
+            new_free = max_points - total_invested  # считает СЕРВЕР
+
             cur.execute("""
                 UPDATE player_stats
-                SET base_body = %s,
-                    base_strength = %s,
-                    base_agility = %s,
-                    base_intellect = %s,
+                SET base_body = %s, base_strength = %s,
+                    base_agility = %s, base_intellect = %s,
                     free_stat_points = %s
                 WHERE user_id = %s
-            """, (new_base_body, new_base_strength, new_base_agility, new_base_intellect,
-                  update.free_points, user_id))
-
-            if cur.rowcount == 0:
-                raise HTTPException(404, "Player stats not found")
+            """, (new_base_body, new_base_strength, new_base_agility,
+                  new_base_intellect, new_free, user_id))
             conn.commit()
 
-    # После обновления базовых статов пересчитываем производные
     recalc_derived_stats(user_id)
-    return {"success": True}
+    return {"success": True, "free_stat_points": new_free}
 
 @router.post("/equip")
 def equip_item(req: EquipRequest):

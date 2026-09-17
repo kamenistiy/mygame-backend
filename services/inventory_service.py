@@ -109,33 +109,40 @@ def use_item_logic(user_id: str, req, conn, cur):
 
         return {"success": True, "request_id": new_request["id"]}
 
-    # === STATS CERTIFICATE ===
+        # === STATS CERTIFICATE ===
     if req.item_id == 'stats_certificate':
         cur.execute("""
-            SELECT p.level, ps.base_body, ps.base_strength, ps.base_agility, ps.base_intellect, ps.free_stat_points
+            SELECT p.level
             FROM players p
             JOIN player_stats ps ON p.id = ps.user_id
             WHERE p.id = %s
         """, (user_id,))
-
-        player_stats = cur.fetchone()
-        if not player_stats:
+        row = cur.fetchone()
+        if not row:
             raise HTTPException(status_code=404, detail="Player not found")
 
-        level = player_stats['level']
-        correct_free_points = (level - 1) * 2 + 2
+        level = row['level']
+        correct_free_points = level * 2   # за каждый уровень даётся 2 очка
 
+        # ВАЖНО: присваивание (=), а НЕ накопление (+=).
+        # Обнуляем вложенные, ставим ровно level*2 свободных.
         cur.execute("""
-            UPDATE player_stats 
-            SET base_body = 0, base_strength = 0, base_agility = 0, base_intellect = 0, 
-                free_stat_points = free_stat_points + %s
+            UPDATE player_stats
+            SET base_body = 0,
+                base_strength = 0,
+                base_agility = 0,
+                base_intellect = 0,
+                free_stat_points = %s
             WHERE user_id = %s
         """, (correct_free_points, user_id))
 
         conn.commit()
 
         recalc_derived_stats(user_id)
-        remove_item_from_inventory(user_id, req.item_id, req.quantity)
+
+        removed = remove_item_from_inventory(user_id, req.item_id, req.quantity)
+        if not removed:
+            raise HTTPException(status_code=400, detail="Недостаточно предметов")
 
         add_notification(
             user_id,
