@@ -379,7 +379,7 @@ def get_equipment(user_id: str):
     with get_db() as conn:
         with conn.cursor() as cur:
             cur.execute("""
-                SELECT slot, item_id, i.name, i.icon
+                SELECT i.*, pe.slot
                 FROM player_equipment pe
                 JOIN items i ON pe.item_id = i.id
                 WHERE pe.user_id = %s
