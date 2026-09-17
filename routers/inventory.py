@@ -22,6 +22,10 @@ class RemoveItemRequest(BaseModel):
 class MoveToJunkRequest(BaseModel):
     item_id: str
     quantity: int = 1
+
+class ReturnFromJunkRequest(BaseModel):
+    item_id: str
+    quantity: int = 1
     
 @router.post("/item/use")
 def use_item(user_id: str, req: UseItemRequest):
@@ -120,6 +124,53 @@ def move_to_junk(user_id: str, req: MoveToJunkRequest):
         
         conn.commit()
         return {"success": True}
+    except Exception as e:
+        conn.rollback()
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        cur.close()
+        conn.close()
+
+@router.post("/inventory/return_from_junk")
+def return_from_junk(user_id: str, req: ReturnFromJunkRequest):
+    conn = get_db()
+    cur = conn.cursor()
+    try:
+        # 1. Проверяем наличие в junk
+        cur.execute(
+            "SELECT quantity FROM junk_inventory WHERE user_id = %s AND item_id = %s",
+            (user_id, req.item_id)
+        )
+        row = cur.fetchone()
+        if not row or row['quantity'] < req.quantity:
+            raise HTTPException(status_code=400, detail="Недостаточно предметов в Сбыте")
+
+        # 2. Уменьшаем junk
+        new_junk_qty = row['quantity'] - req.quantity
+        if new_junk_qty == 0:
+            cur.execute(
+                "DELETE FROM junk_inventory WHERE user_id = %s AND item_id = %s",
+                (user_id, req.item_id)
+            )
+        else:
+            cur.execute(
+                "UPDATE junk_inventory SET quantity = %s WHERE user_id = %s AND item_id = %s",
+                (new_junk_qty, user_id, req.item_id)
+            )
+
+        # 3. Возвращаем в обычный инвентарь
+        cur.execute("""
+            INSERT INTO inventory (user_id, item_id, quantity)
+            VALUES (%s, %s, %s)
+            ON CONFLICT (user_id, item_id)
+            DO UPDATE SET quantity = inventory.quantity + EXCLUDED.quantity
+        """, (user_id, req.item_id, req.quantity))
+
+        conn.commit()
+        return {"success": True}
+    except HTTPException:
+        conn.rollback()
+        raise
     except Exception as e:
         conn.rollback()
         raise HTTPException(status_code=500, detail=str(e))
