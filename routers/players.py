@@ -412,3 +412,67 @@ def unequip_item(req: UnequipRequest):
             conn.commit()
             recalc_derived_stats(req.user_id)
             return {"success": True}
+
+@router.get("/rating/all")
+def get_rating():
+    """Отдаёт сводные данные по всем игрокам для вкладки Рейтинг."""
+    with get_db() as conn:
+        with conn.cursor() as cur:
+            cur.execute("""
+                SELECT
+                    p.id,
+                    p.username,
+                    p.level,
+                    -- Атрибуты
+                    COALESCE(ps.body_total, 0)      AS body_total,
+                    COALESCE(ps.strength_total, 0)  AS strength_total,
+                    COALESCE(ps.agility_total, 0)   AS agility_total,
+                    COALESCE(ps.intellect_total, 0) AS intellect_total,
+                    -- Боевые
+                    COALESCE(ps.max_hp, 0)   AS max_hp,
+                    COALESCE(ps.max_mana, 0) AS max_mana,
+                    COALESCE(ps.pat, 0)      AS pat,
+                    COALESCE(ps.mat, 0)      AS mat,
+                    COALESCE(ps.pdf, 0)      AS pdf,
+                    COALESCE(ps.mdf, 0)      AS mdf,
+                    COALESCE(ps.ddg, 0)      AS ddg,
+                    COALESCE(ps.acc, 0)      AS acc,
+                    COALESCE(ps.sp, 0)       AS sp,
+                    -- Путевые
+                    COALESCE(ps.crft, 0) AS crft,
+                    COALESCE(ps.spd, 0)  AS spd,
+                    COALESCE(ps.gat, 0)  AS gat,
+                    COALESCE(ps.awr, 0)  AS awr,
+                    -- Заслуги
+                    COALESCE(ps.fame, 0) AS fame,
+                    COALESCE(ps.rep, 0)  AS rep,
+                    COALESCE(ps.ins, 0)  AS ins,
+                    -- Свершения
+                    COALESCE(ps.pvp, 0)  AS pvp,
+                    COALESCE(ps.pve, 0)  AS pve,
+                    COALESCE(ps.unic, 0) AS unic,
+                    COALESCE(ps.zone, 0) AS zone,
+                    -- Кол-во разблокированных достижений и всего
+                    COALESCE((
+                        SELECT COUNT(*) FROM user_achievements ua
+                        WHERE ua.user_id = p.id AND ua.is_unlocked = true
+                    ), 0) AS ach_count,
+                    COALESCE((
+                        SELECT COUNT(*) FROM user_achievements ua
+                        WHERE ua.user_id = p.id
+                    ), 0) AS ach_total,
+                    -- Заглушки для поражений (добавишь колонки в players — заработает)
+                    0 AS defeats_pve,
+                    0 AS defeats_pvp
+                FROM players p
+                LEFT JOIN player_stats ps ON ps.user_id = p.id
+                WHERE p.username IS NOT NULL
+            """)
+            rows = cur.fetchall()
+
+            # Приводим None → 0 (в PG могут быть NULL у старых игроков)
+            for row in rows:
+                for k, v in row.items():
+                    if v is None:
+                        row[k] = 0
+            return {"players": rows}
