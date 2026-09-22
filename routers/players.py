@@ -462,7 +462,9 @@ def get_rating():
                     COALESCE(ps.rep, 0)      AS rep,
                     COALESCE(ps.ins, 0)      AS ins,
                     COALESCE(ps.pvp, 0)      AS pvp,
-                    COALESCE(ps.pve, 0)      AS pve,
+                    COALESCE(ps.pve, 0)      AS pve_common,
+                    0                        AS pve_rare,
+                    0                        AS pve_epic,
                     COALESCE(ps.unic, 0)     AS unic,
                     COALESCE(ps.zone, 0)     AS zone,
                     COALESCE((
