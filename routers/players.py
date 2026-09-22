@@ -413,6 +413,14 @@ def unequip_item(req: UnequipRequest):
             recalc_derived_stats(req.user_id)
             return {"success": True}
 
+def _build_avatar_url(storage_path: str | None) -> str | None:
+    if not storage_path:
+        return None
+    if storage_path.startswith("http"):
+        return storage_path
+    return f"{SUPABASE_STORAGE_BASE}/{AVATARS_BUCKET}/{storage_path}"
+
+
 @router.get("/rating/all")
 def get_rating():
     """Отдаёт сводные данные по всем игрокам для вкладки Рейтинг."""
@@ -423,12 +431,10 @@ def get_rating():
                     p.id,
                     p.username,
                     p.level,
-                    -- Атрибуты
                     COALESCE(ps.body_total, 0)      AS body_total,
                     COALESCE(ps.strength_total, 0)  AS strength_total,
                     COALESCE(ps.agility_total, 0)   AS agility_total,
                     COALESCE(ps.intellect_total, 0) AS intellect_total,
-                    -- Боевые
                     COALESCE(ps.max_hp, 0)   AS max_hp,
                     COALESCE(ps.max_mana, 0) AS max_mana,
                     COALESCE(ps.pat, 0)      AS pat,
@@ -438,30 +444,28 @@ def get_rating():
                     COALESCE(ps.ddg, 0)      AS ddg,
                     COALESCE(ps.acc, 0)      AS acc,
                     COALESCE(ps.sp, 0)       AS sp,
-                    -- Путевые
-                    COALESCE(ps.crft, 0) AS crft,
-                    COALESCE(ps.spd, 0)  AS spd,
-                    COALESCE(ps.gat, 0)  AS gat,
-                    COALESCE(ps.awr, 0)  AS awr,
-                    -- Заслуги
-                    COALESCE(ps.fame, 0) AS fame,
-                    COALESCE(ps.rep, 0)  AS rep,
-                    COALESCE(ps.ins, 0)  AS ins,
-                    -- Свершения
-                    COALESCE(ps.pvp, 0)  AS pvp,
-                    COALESCE(ps.pve, 0)  AS pve,
-                    COALESCE(ps.unic, 0) AS unic,
-                    COALESCE(ps.zone, 0) AS zone,
-                    -- Кол-во разблокированных достижений и всего
+                    COALESCE(ps.crft, 0)     AS crft,
+                    COALESCE(ps.spd, 0)      AS spd,
+                    COALESCE(ps.gat, 0)      AS gat,
+                    COALESCE(ps.awr, 0)      AS awr,
+                    COALESCE(ps.fame, 0)     AS fame,
+                    COALESCE(ps.rep, 0)      AS rep,
+                    COALESCE(ps.ins, 0)      AS ins,
+                    COALESCE(ps.pvp, 0)      AS pvp,
+                    COALESCE(ps.pve, 0)      AS pve,
+                    COALESCE(ps.unic, 0)     AS unic,
+                    COALESCE(ps.zone, 0)     AS zone,
                     COALESCE((
                         SELECT COUNT(*) FROM user_achievements ua
                         WHERE ua.user_id = p.id AND ua.is_unlocked = true
                     ), 0) AS ach_count,
-                    COALESCE((
-                        SELECT COUNT(*) FROM user_achievements ua
-                        WHERE ua.user_id = p.id
-                    ), 0) AS ach_total,
-                    -- Заглушки для поражений (добавишь колонки в players — заработает)
+                    -- Активный аватар
+                    (
+                        SELECT ua.storage_path FROM user_avatars ua
+                        WHERE ua.user_id = p.id AND ua.is_active = true
+                        LIMIT 1
+                    ) AS avatar_path,
+                    -- Заглушки под поражения (добавишь колонки — заменишь на реальные поля)
                     0 AS defeats_pve,
                     0 AS defeats_pvp
                 FROM players p
@@ -470,9 +474,12 @@ def get_rating():
             """)
             rows = cur.fetchall()
 
-            # Приводим None → 0 (в PG могут быть NULL у старых игроков)
             for row in rows:
-                for k, v in row.items():
-                    if v is None:
+                # Приведение None → 0
+                for k, v in list(row.items()):
+                    if v is None and k != 'avatar_path':
                         row[k] = 0
+                # Собираем полный URL аватара
+                row['avatar_url'] = _build_avatar_url(row.pop('avatar_path', None)) or 'images/avatar.webp'
+
             return {"players": rows}
