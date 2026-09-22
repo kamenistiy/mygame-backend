@@ -17,6 +17,9 @@ from services.player_service import (
 )
 from services.inventory_service import remove_item_from_inventory
 from services.achievement_service import grant_achievement_if_not_obtained, update_achievement_progress_logic
+# ====== Константы для сборки URL аватара ======
+SUPABASE_STORAGE_BASE = "https://onkpedemixygmtllrehp.supabase.co/storage/v1/object/public"
+AVATARS_BUCKET = "avatars"
 
 router = APIRouter()
 
@@ -413,12 +416,19 @@ def unequip_item(req: UnequipRequest):
             recalc_derived_stats(req.user_id)
             return {"success": True}
 
-def _build_avatar_url(storage_path: str | None) -> str | None:
+# ====== Хелпер для URL аватара ======
+def _build_avatar_url(storage_path):
+    """Возвращает публичный URL аватара так же, как /user-avatar/{user_id}."""
     if not storage_path:
         return None
-    if storage_path.startswith("http"):
+    # Если в БД вдруг уже лежит полный URL — возвращаем как есть
+    if isinstance(storage_path, str) and storage_path.startswith("http"):
         return storage_path
-    return f"{SUPABASE_STORAGE_BASE}/{AVATARS_BUCKET}/{storage_path}"
+    try:
+        return supabase.storage.from_("avatars").get_public_url(storage_path)
+    except Exception as e:
+        print(f"⚠️ Не удалось построить URL аватара ({storage_path}): {e}")
+        return None
 
 
 @router.get("/rating/all")
