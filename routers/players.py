@@ -100,7 +100,7 @@ def get_player(user_id: str):
                     user_id,
                     'alpha_tester'
                 )
-                # ===== Стартовая позиция игрока =====
+                                # ===== Стартовая позиция игрока =====
                 cur.execute("SELECT id FROM regions WHERE is_starting = TRUE LIMIT 1")
                 start_row = cur.fetchone()
                 if start_row:
@@ -112,12 +112,13 @@ def get_player(user_id: str):
                     conn.commit()
                 else:
                     print(f"⚠️ Нет стартового региона (is_starting=TRUE). Игрок {user_id} создан без позиции.")
-                                add_notification(
-                                    user_id,
-                                    'system',
-                                    'Добро пожаловать!',
-                                    f'Привет, {username}! Рады видеть тебя в Fastened World.'
-                                )
+
+                add_notification(
+                    user_id,
+                    'system',
+                    'Добро пожаловать!',
+                    f'Привет, {username}! Рады видеть тебя в Fastened World.'
+                )
 
                 recalc_derived_stats(user_id)
                 cur.execute("SELECT approved_avatars_count FROM players WHERE id = %s", (user_id,))
