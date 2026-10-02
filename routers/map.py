@@ -119,18 +119,33 @@ def get_player_position(user_id: str):
                 cur.execute("UPDATE player_movements SET notified = TRUE WHERE id = %s", (arrival['id'],))
                 conn.commit()
 
-            # 3. Позиция
+            # 3. Позиция + счётчики
             cur.execute("""
-                SELECT current_region_id, current_city_id
-                FROM player_positions WHERE user_id = %s
+                SELECT
+                    pp.current_region_id,
+                    pp.current_city_id,
+                    r.name AS region_name,
+                    s.name AS city_name,
+                    (
+                        SELECT COUNT(*) FROM player_positions pp2
+                        WHERE pp2.current_region_id = pp.current_region_id
+                    ) AS players_count
+                FROM player_positions pp
+                LEFT JOIN regions r ON r.id = pp.current_region_id
+                LEFT JOIN settlements s ON s.id = pp.current_city_id
+                WHERE pp.user_id = %s
             """, (user_id,))
             pos = cur.fetchone()
             if not pos:
-                return {"region_id": None, "city_id": None}
+                return {"region_id": None, "city_id": None, "region_name": None,
+                        "city_name": None, "players_count": 0}
 
             return {
                 "region_id": pos['current_region_id'],
                 "city_id": pos['current_city_id'],
+                "region_name": pos['region_name'],
+                "city_name": pos['city_name'],
+                "players_count": pos['players_count'] or 0,
                 "in_movement": movement is not None,
                 "arrival_pending": arrival_region_name
             }
