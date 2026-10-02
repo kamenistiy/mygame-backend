@@ -264,9 +264,11 @@ def get_movement_status(user_id: str):
 
             now = datetime.now(timezone.utc)
             remaining = int((movement['end_time'] - now).total_seconds())
+            total = int((movement['end_time'] - movement['created_at']).total_seconds())
             return {
                 "in_progress": True,
                 "remaining_seconds": remaining,
+                "total_seconds": total,
                 "from_region_id": movement['from_region_id'],
                 "to_region_id": movement['to_region_id']
             }
