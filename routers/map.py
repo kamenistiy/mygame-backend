@@ -21,13 +21,15 @@ class PositionUpdate(BaseModel):
 
 # ========== Хелперы ==========
 def _finalize_movement_if_due(cur, movement):
-    """Если время пешего пути истекло — завершаем его и обновляем позицию."""
+    """Если время пешего пути истекло — завершаем его и обновляем позицию.
+       Запись НЕ удаляем, чтобы фронт мог узнать о прибытии (arrival_pending)."""
     now = datetime.now(timezone.utc)
     if now >= movement['end_time']:
-        cur.execute(
-            "UPDATE player_movements SET status = 'completed' WHERE id = %s",
-            (movement['id'],)
-        )
+        cur.execute("""
+            UPDATE player_movements
+            SET status = 'completed'
+            WHERE id = %s
+        """, (movement['id'],))
         cur.execute("""
             UPDATE player_positions
             SET current_region_id = %s, current_city_id = NULL, updated_at = NOW()
@@ -86,10 +88,9 @@ def get_settlement_details(settlement_id: str):
 
 @router.get("/position/{user_id}")
 def get_player_position(user_id: str):
-    """Текущая позиция игрока. Используется фронтом при открытии карты."""
     with get_db() as conn:
         with conn.cursor() as cur:
-            # 1. Если игрок в пути — сначала завершим просроченное перемещение
+            # 1. Догнать просроченное перемещение
             cur.execute("""
                 SELECT * FROM player_movements
                 WHERE user_id = %s AND status = 'in_progress'
@@ -101,11 +102,27 @@ def get_player_position(user_id: str):
                     conn.commit()
                     movement = None
 
-            # 2. Позиция
+            # 2. Проверить, есть ли непрочитанное прибытие
+            cur.execute("""
+                SELECT id, to_region_id FROM player_movements
+                WHERE user_id = %s AND status = 'completed' AND notified = FALSE
+                ORDER BY created_at DESC LIMIT 1
+            """, (user_id,))
+            arrival = cur.fetchone()
+
+            arrival_region_name = None
+            if arrival:
+                cur.execute("SELECT name FROM regions WHERE id = %s", (arrival['to_region_id'],))
+                r = cur.fetchone()
+                if r:
+                    arrival_region_name = r['name']
+                cur.execute("UPDATE player_movements SET notified = TRUE WHERE id = %s", (arrival['id'],))
+                conn.commit()
+
+            # 3. Позиция
             cur.execute("""
                 SELECT current_region_id, current_city_id
-                FROM player_positions
-                WHERE user_id = %s
+                FROM player_positions WHERE user_id = %s
             """, (user_id,))
             pos = cur.fetchone()
             if not pos:
@@ -114,7 +131,8 @@ def get_player_position(user_id: str):
             return {
                 "region_id": pos['current_region_id'],
                 "city_id": pos['current_city_id'],
-                "in_movement": movement is not None
+                "in_movement": movement is not None,
+                "arrival_pending": arrival_region_name
             }
 
 
@@ -296,5 +314,26 @@ def update_position(req: PositionUpdate):
                 SET current_city_id = %s, updated_at = NOW()
                 WHERE user_id = %s
             """, (req.settlement_id, req.user_id))
+            conn.commit()
+            return {"success": True}
+
+@router.post("/movement/cancel")
+def cancel_movement(user_id: str):
+    """Отменить пеший путь. Игрок остаётся в исходном регионе."""
+    with get_db() as conn:
+        with conn.cursor() as cur:
+            cur.execute("""
+                SELECT id FROM player_movements
+                WHERE user_id = %s AND status = 'in_progress'
+                LIMIT 1
+            """, (user_id,))
+            m = cur.fetchone()
+            if not m:
+                raise HTTPException(400, "Нет активного перемещения")
+
+            cur.execute("""
+                UPDATE player_movements SET status = 'cancelled'
+                WHERE id = %s
+            """, (m['id'],))
             conn.commit()
             return {"success": True}
