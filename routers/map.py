@@ -188,7 +188,6 @@ def get_connections(region_id: str, user_id: str):
 
 @router.post("/travel")
 def start_travel(req: TravelRequest):
-    """Начать перемещение между регионами."""
     with get_db() as conn:
         with conn.cursor() as cur:
             # 1. Уже в пути?
@@ -199,7 +198,20 @@ def start_travel(req: TravelRequest):
             if cur.fetchone():
                 raise HTTPException(400, "Вы уже в пути")
 
-            # 2. Текущая позиция
+            # 2. Проверяем энергию (3 ед.)
+            cur.execute("SELECT current_energy FROM player_stats WHERE user_id = %s", (req.user_id,))
+            ps = cur.fetchone()
+            if not ps or ps['current_energy'] < 3:
+                raise HTTPException(400, "Недостаточно энергии (нужно 3)")
+
+            # 3. Списываем энергию
+            cur.execute("""
+                UPDATE player_stats
+                SET current_energy = current_energy - 3
+                WHERE user_id = %s
+            """, (req.user_id,))
+
+            # 4. Текущая позиция
             cur.execute("""
                 SELECT current_region_id FROM player_positions
                 WHERE user_id = %s
@@ -210,7 +222,7 @@ def start_travel(req: TravelRequest):
 
             from_region_id = pos['current_region_id']
 
-            # 3. Есть ли путь?
+            # 5. Есть ли путь?
             cur.execute("""
                 SELECT * FROM region_connections
                 WHERE from_region_id = %s AND to_region_id = %s
@@ -219,7 +231,7 @@ def start_travel(req: TravelRequest):
             if not connection:
                 raise HTTPException(400, "Нет прямого пути в этот регион")
 
-            # 4. Обработка способа
+            # 6. Обработка способа
             if req.method == 'gold':
                 cur.execute("SELECT coins FROM players WHERE id = %s", (req.user_id,))
                 player = cur.fetchone()
