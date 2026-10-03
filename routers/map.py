@@ -65,7 +65,7 @@ def get_region_details(region_id: str):
                 raise HTTPException(404, "Регион не найден")
 
             cur.execute("""
-                SELECT id, name, description, background_image, map_x, map_y
+                SELECT id, name, description, background_image, map_x, map_y, map_icon
                 FROM settlements
                 WHERE region_id = %s
                 ORDER BY name
