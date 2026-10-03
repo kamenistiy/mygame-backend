@@ -161,7 +161,6 @@ def get_connections(region_id: str, user_id: str):
                     rc.id,
                     rc.to_region_id,
                     rc.gold_cost,
-                    rc.item_id,
                     rc.time_seconds,
                     r.name AS to_region_name,
                     r.background_image AS to_region_image
@@ -188,6 +187,12 @@ def get_connections(region_id: str, user_id: str):
 
 @router.post("/travel")
 def start_travel(req: TravelRequest):
+    # Энергозатраты по способам
+    ENERGY_COST = {'gold': 3, 'walk': 3, 'teleport': 5}
+    cost = ENERGY_COST.get(req.method)
+    if cost is None:
+        raise HTTPException(400, "Неизвестный способ перемещения")
+
     with get_db() as conn:
         with conn.cursor() as cur:
             # 1. Уже в пути?
@@ -198,18 +203,17 @@ def start_travel(req: TravelRequest):
             if cur.fetchone():
                 raise HTTPException(400, "Вы уже в пути")
 
-            # 2. Проверяем энергию (3 ед.)
+            # 2. Проверяем энергию
             cur.execute("SELECT current_energy FROM player_stats WHERE user_id = %s", (req.user_id,))
             ps = cur.fetchone()
-            if not ps or ps['current_energy'] < 3:
-                raise HTTPException(400, "Недостаточно энергии (нужно 3)")
+            if not ps or ps['current_energy'] < cost:
+                raise HTTPException(400, f"Недостаточно энергии (нужно {cost})")
 
             # 3. Списываем энергию
-            cur.execute("""
-                UPDATE player_stats
-                SET current_energy = current_energy - 3
-                WHERE user_id = %s
-            """, (req.user_id,))
+            cur.execute(
+                "UPDATE player_stats SET current_energy = current_energy - %s WHERE user_id = %s",
+                (cost, req.user_id)
+            )
 
             # 4. Текущая позиция
             cur.execute("""
@@ -248,18 +252,9 @@ def start_travel(req: TravelRequest):
                 """, (req.to_region_id, req.user_id))
                 conn.commit()
                 return {"success": True, "type": "instant"}
-
-            elif req.method == 'item':
-                if not connection['item_id']:
-                    raise HTTPException(400, "Для этого пути не требуется предмет")
-                cur.execute("""
-                    SELECT quantity FROM inventory
-                    WHERE user_id = %s AND item_id = %s
-                """, (req.user_id, connection['item_id']))
-                inv = cur.fetchone()
-                if not inv or inv['quantity'] < 1:
-                    raise HTTPException(400, "У вас нет нужного предмета")
-                remove_item_from_inventory(req.user_id, connection['item_id'], 1)
+            
+            elif req.method == 'teleport':
+                # Мгновенное перемещение только за энергию (уже списано 5)
                 cur.execute("""
                     UPDATE player_positions
                     SET current_region_id = %s, current_city_id = NULL, updated_at = NOW()
