@@ -51,7 +51,7 @@ def root():
 
 @app.get("/ping")
 def ping():
-    return {"ping": "pong"}
+    return {"ping": "pong", "version": "map_icon_v3"}
 
 
 if __name__ == "__main__":

@@ -47,7 +47,7 @@ def get_regions():
     with get_db() as conn:
         with conn.cursor() as cur:
             cur.execute("""
-                SELECT id, name, description, background_image, map_x, map_y
+                SELECT id, name, description, background_image, map_x, map_y, map_icon
                 FROM regions
                 ORDER BY name
             """)
