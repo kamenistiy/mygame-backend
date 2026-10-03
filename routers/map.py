@@ -397,7 +397,7 @@ def get_travel_info(user_id: str, to_region_id: str):
                 total_gold += edge['gold_cost'] or 0
                 total_time += edge['time_seconds'] or 0
 
-            cur.execute("SELECT id, name FROM regions WHERE id = ANY(%s)", (path,))
+            cur.execute("SELECT id, name FROM regions WHERE id::text = ANY(%s)", (path,))
             names = {r['id']: r['name'] for r in cur.fetchall()}
             path_names = [names.get(rid, '?') for rid in path]
 
