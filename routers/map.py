@@ -168,21 +168,7 @@ def get_connections(region_id: str, user_id: str):
                 JOIN regions r ON r.id = rc.to_region_id
                 WHERE rc.from_region_id = %s
             """, (region_id,))
-            connections = cur.fetchall()
-
-            # Проверяем наличие предмета у игрока для каждого перехода
-            for c in connections:
-                c['has_item'] = False
-                if c['item_id']:
-                    cur.execute("""
-                        SELECT quantity FROM inventory
-                        WHERE user_id = %s AND item_id = %s
-                    """, (user_id, c['item_id']))
-                    inv = cur.fetchone()
-                    if inv and inv['quantity'] > 0:
-                        c['has_item'] = True
-
-            return {"connections": connections}
+            return {"connections": cur.fetchall()}
 
 
 @router.post("/travel")
