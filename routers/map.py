@@ -3,6 +3,7 @@ from pydantic import BaseModel
 from datetime import datetime, timezone, timedelta
 from core.db import get_db
 from services.inventory_service import remove_item_from_inventory
+from collections import deque
 
 router = APIRouter(prefix="/map", tags=["map"])
 
@@ -38,6 +39,37 @@ def _finalize_movement_if_due(cur, movement):
         return True
     return False
 
+def _find_path(cur, from_region_id, to_region_id):
+    """BFS: кратчайший путь между регионами. Возвращает список ID (включая оба конца) или None."""
+    if not from_region_id or not to_region_id:
+        return None
+    if from_region_id == to_region_id:
+        return [from_region_id]
+
+    cur.execute("SELECT from_region_id, to_region_id FROM region_connections")
+    edges = cur.fetchall()
+
+    adj = {}
+    for e in edges:
+        adj.setdefault(e['from_region_id'], []).append(e['to_region_id'])
+
+    queue = deque([from_region_id])
+    parent = {from_region_id: None}
+
+    while queue:
+        node = queue.popleft()
+        for nxt in adj.get(node, []):
+            if nxt in parent:
+                continue
+            parent[nxt] = node
+            if nxt == to_region_id:
+                path = [nxt]
+                while path[-1] != from_region_id:
+                    path.append(parent[path[-1]])
+                path.reverse()
+                return path
+            queue.append(nxt)
+    return None
 
 # ========== Эндпоинты ==========
 
@@ -151,32 +183,10 @@ def get_player_position(user_id: str):
             }
 
 
-@router.get("/connections/{region_id}")
-def get_connections(region_id: str, user_id: str):
-    """Доступные переходы из региона + данные для модалки выбора пути."""
-    with get_db() as conn:
-        with conn.cursor() as cur:
-            cur.execute("""
-                SELECT
-                    rc.id,
-                    rc.to_region_id,
-                    rc.gold_cost,
-                    rc.time_seconds,
-                    r.name AS to_region_name,
-                    r.background_image AS to_region_image
-                FROM region_connections rc
-                JOIN regions r ON r.id = rc.to_region_id
-                WHERE rc.from_region_id = %s
-            """, (region_id,))
-            return {"connections": cur.fetchall()}
-
-
 @router.post("/travel")
 def start_travel(req: TravelRequest):
-    # Энергозатраты по способам
-    ENERGY_COST = {'gold': 3, 'walk': 3, 'teleport': 5}
-    cost = ENERGY_COST.get(req.method)
-    if cost is None:
+    ENERGY_PER_HOP = {'gold': 3, 'walk': 3, 'teleport': 5}
+    if req.method not in ENERGY_PER_HOP:
         raise HTTPException(400, "Неизвестный способ перемещения")
 
     with get_db() as conn:
@@ -189,47 +199,57 @@ def start_travel(req: TravelRequest):
             if cur.fetchone():
                 raise HTTPException(400, "Вы уже в пути")
 
-            # 2. Проверяем энергию
-            cur.execute("SELECT current_energy FROM player_stats WHERE user_id = %s", (req.user_id,))
-            ps = cur.fetchone()
-            if not ps or ps['current_energy'] < cost:
-                raise HTTPException(400, f"Недостаточно энергии (нужно {cost})")
-
-            # 3. Списываем энергию
-            cur.execute(
-                "UPDATE player_stats SET current_energy = current_energy - %s WHERE user_id = %s",
-                (cost, req.user_id)
-            )
-
-            # 4. Текущая позиция
-            cur.execute("""
-                SELECT current_region_id FROM player_positions
-                WHERE user_id = %s
-            """, (req.user_id,))
+            # 2. Текущая позиция
+            cur.execute("SELECT current_region_id FROM player_positions WHERE user_id = %s", (req.user_id,))
             pos = cur.fetchone()
             if not pos or not pos['current_region_id']:
                 raise HTTPException(400, "Позиция игрока не определена")
-
             from_region_id = pos['current_region_id']
 
-            # 5. Есть ли путь?
-            cur.execute("""
-                SELECT * FROM region_connections
-                WHERE from_region_id = %s AND to_region_id = %s
-            """, (from_region_id, req.to_region_id))
-            connection = cur.fetchone()
-            if not connection:
-                raise HTTPException(400, "Нет прямого пути в этот регион")
+            # 3. Ищем путь
+            path = _find_path(cur, from_region_id, req.to_region_id)
+            if not path or len(path) < 2:
+                raise HTTPException(400, "Путь не найден")
 
-            # 6. Обработка способа
+            hops = len(path) - 1
+
+            # 4. Считаем суммарные затраты
+            total_gold = 0
+            total_time = 0
+            for i in range(hops):
+                cur.execute("""
+                    SELECT gold_cost, time_seconds FROM region_connections
+                    WHERE from_region_id = %s AND to_region_id = %s
+                """, (path[i], path[i + 1]))
+                edge = cur.fetchone()
+                if not edge:
+                    raise HTTPException(500, "Связь между регионами отсутствует")
+                total_gold += edge['gold_cost'] or 0
+                total_time += edge['time_seconds'] or 0
+
+            total_energy = ENERGY_PER_HOP[req.method] * hops
+
+            # 5. Проверяем энергию
+            cur.execute("SELECT current_energy FROM player_stats WHERE user_id = %s", (req.user_id,))
+            ps = cur.fetchone()
+            if not ps or ps['current_energy'] < total_energy:
+                raise HTTPException(400, f"Недостаточно энергии (нужно {total_energy})")
+
+            # 6. Списываем энергию
+            cur.execute(
+                "UPDATE player_stats SET current_energy = current_energy - %s WHERE user_id = %s",
+                (total_energy, req.user_id)
+            )
+
+            # 7. Обработка способа
             if req.method == 'gold':
                 cur.execute("SELECT coins FROM players WHERE id = %s", (req.user_id,))
                 player = cur.fetchone()
-                if player['coins'] < connection['gold_cost']:
-                    raise HTTPException(400, "Недостаточно золота")
+                if player['coins'] < total_gold:
+                    raise HTTPException(400, f"Недостаточно монет (нужно {total_gold})")
                 cur.execute(
                     "UPDATE players SET coins = coins - %s WHERE id = %s",
-                    (connection['gold_cost'], req.user_id)
+                    (total_gold, req.user_id)
                 )
                 cur.execute("""
                     UPDATE player_positions
@@ -237,20 +257,19 @@ def start_travel(req: TravelRequest):
                     WHERE user_id = %s
                 """, (req.to_region_id, req.user_id))
                 conn.commit()
-                return {"success": True, "type": "instant"}
-            
+                return {"success": True, "type": "instant", "hops": hops}
+
             elif req.method == 'teleport':
-                # Мгновенное перемещение только за энергию (уже списано 5)
                 cur.execute("""
                     UPDATE player_positions
                     SET current_region_id = %s, current_city_id = NULL, updated_at = NOW()
                     WHERE user_id = %s
                 """, (req.to_region_id, req.user_id))
                 conn.commit()
-                return {"success": True, "type": "instant"}
+                return {"success": True, "type": "instant", "hops": hops}
 
             elif req.method == 'walk':
-                end_time = datetime.now(timezone.utc) + timedelta(seconds=connection['time_seconds'])
+                end_time = datetime.now(timezone.utc) + timedelta(seconds=total_time)
                 cur.execute("""
                     INSERT INTO player_movements
                     (user_id, from_region_id, to_region_id, method, end_time, status)
@@ -263,10 +282,10 @@ def start_travel(req: TravelRequest):
                     "success": True,
                     "type": "walk",
                     "movement_id": str(movement_id),
-                    "end_time": end_time.isoformat()
+                    "end_time": end_time.isoformat(),
+                    "total_seconds": total_time,
+                    "hops": hops
                 }
-
-            raise HTTPException(400, "Неизвестный способ перемещения")
 
 
 @router.get("/movement/status")
@@ -345,3 +364,49 @@ def cancel_movement(user_id: str):
             """, (m['id'],))
             conn.commit()
             return {"success": True}
+
+@router.get("/travel-info/{user_id}/{to_region_id}")
+def get_travel_info(user_id: str, to_region_id: str):
+    with get_db() as conn:
+        with conn.cursor() as cur:
+            cur.execute("SELECT current_region_id FROM player_positions WHERE user_id = %s", (user_id,))
+            pos = cur.fetchone()
+            if not pos or not pos['current_region_id']:
+                raise HTTPException(404, "Позиция игрока не определена")
+            from_region_id = pos['current_region_id']
+
+            if from_region_id == to_region_id:
+                raise HTTPException(400, "Вы уже в этом регионе")
+
+            path = _find_path(cur, from_region_id, to_region_id)
+            if not path:
+                raise HTTPException(404, "Путь не найден")
+
+            hops = len(path) - 1
+
+            total_gold = 0
+            total_time = 0
+            for i in range(hops):
+                cur.execute("""
+                    SELECT gold_cost, time_seconds FROM region_connections
+                    WHERE from_region_id = %s AND to_region_id = %s
+                """, (path[i], path[i + 1]))
+                edge = cur.fetchone()
+                if not edge:
+                    raise HTTPException(500, "Связь между регионами отсутствует")
+                total_gold += edge['gold_cost'] or 0
+                total_time += edge['time_seconds'] or 0
+
+            cur.execute("SELECT id, name FROM regions WHERE id = ANY(%s)", (path,))
+            names = {r['id']: r['name'] for r in cur.fetchall()}
+            path_names = [names.get(rid, '?') for rid in path]
+
+            return {
+                "path": path,
+                "path_names": path_names,
+                "hops": hops,
+                "to_name": names.get(to_region_id, '?'),
+                "gold": {"cost": total_gold, "energy": 3 * hops},
+                "walk": {"time_seconds": total_time, "energy": 3 * hops},
+                "teleport": {"energy": 5 * hops}
+            }
