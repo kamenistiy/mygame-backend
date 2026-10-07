@@ -237,7 +237,13 @@ def start_travel(req: TravelRequest):
 
             # 6. Списываем энергию
             cur.execute(
-                "UPDATE player_stats SET current_energy = current_energy - %s WHERE user_id = %s",
+                """UPDATE player_stats 
+                SET current_energy = current_energy - %s,
+                    last_energy_regen = CASE 
+                        WHEN current_energy >= max_energy THEN NOW() 
+                        ELSE last_energy_regen 
+                    END
+                WHERE user_id = %s""",
                 (total_energy, req.user_id)
             )
 

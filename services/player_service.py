@@ -1,4 +1,4 @@
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from core.db import get_db
 import json
 
@@ -26,28 +26,51 @@ def regen_energy_if_needed(user_id: str):
             now = datetime.now(timezone.utc)
             last = stats['last_energy_regen']
 
+            # Если last_energy_regen NULL — считаем "сейчас" и сразу пишем в БД
+            if last is None:
+                cur.execute(
+                    "UPDATE player_stats SET last_energy_regen = NOW() WHERE user_id = %s",
+                    (user_id,)
+                )
+                conn.commit()
+                return
+
+            # Приводим к UTC, если время без tzinfo
             if last.tzinfo is None:
                 last = last.replace(tzinfo=timezone.utc)
 
             diff_seconds = (now - last).total_seconds()
-            minutes_passed = diff_seconds // 600
+            minutes_passed = int(diff_seconds // 600)
+
+            # Если энергия на максимуме — просто сдвигаем таймер вперёд
+            if stats['current_energy'] >= stats['max_energy']:
+                if minutes_passed > 0:
+                    cur.execute(
+                        "UPDATE player_stats SET last_energy_regen = NOW() WHERE user_id = %s",
+                        (user_id,)
+                    )
+                    conn.commit()
+                return
 
             if minutes_passed <= 0:
                 return
 
             new_energy = min(
-                stats['current_energy'] + int(minutes_passed),
+                stats['current_energy'] + minutes_passed,
                 stats['max_energy']
             )
 
-            if new_energy != stats['current_energy']:
-                cur.execute("""
-                    UPDATE player_stats
-                    SET current_energy = %s,
-                        last_energy_regen = NOW()
-                    WHERE user_id = %s
-                """, (new_energy, user_id))
-                conn.commit()
+            # Сколько "лишних" минут уходит впустую — сдвигаем таймер именно на них
+            consumed_seconds = (new_energy - stats['current_energy']) * 600
+            new_last = last + timedelta(seconds=consumed_seconds)
+
+            cur.execute("""
+                UPDATE player_stats
+                SET current_energy = %s,
+                    last_energy_regen = %s
+                WHERE user_id = %s
+            """, (new_energy, new_last, user_id))
+            conn.commit()
 
 def apply_regen(user_id: str):
     """Обновляет current_hp и current_mana игрока на основе времени, прошедшего с last_regen_time."""

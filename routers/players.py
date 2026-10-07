@@ -225,8 +225,10 @@ def list_players():
 
 @router.get("/player/stats/{user_id}")
 def get_player_stats(user_id: str):
-    # 1. Применяем регенерацию HP/MP (max_hp уже актуален в БД после recalc)
+    # 1. Применяем регенерацию HP/MP
     apply_regen(user_id)
+    # 2. Применяем регенерацию энергии
+    regen_energy_if_needed(user_id)
 
     with get_db() as conn:
         with conn.cursor() as cur:
