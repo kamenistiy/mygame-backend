@@ -97,21 +97,40 @@ def get_active_states(user_id: str):
             """, (user_id,))
 
             rows = cur.fetchall()
-
             states = []
 
             for row in rows:
                 state_key = row.get("state_key")
 
+                # Региональное состояние — не имеет таймера, тянем данные из regions
+                if state_key.startswith('region_'):
+                    cur.execute("""
+                        SELECT name, state_description
+                        FROM regions
+                        WHERE state_key = %s
+                    """, (state_key,))
+                    r = cur.fetchone()
+                    if not r:
+                        continue
+                    states.append({
+                        "id": state_key,
+                        "name": r['name'],
+                        "type": "location",
+                        "icon_class": "state-" + state_key.replace('_', '-'),
+                        "description": r['state_description'] or "",
+                        "parameters": {},
+                        "expires_at": None
+                    })
+                    continue
+
+                # Обычное состояние (бафф/дебафф)
                 info = STATE_INFO.get(state_key)
                 if not info:
                     continue
 
                 params = row.get("parameters") or {}
-
                 expires_at = row.get("expires_at")
                 if expires_at:
-                    # Если время без tzinfo — считаем его UTC
                     if expires_at.tzinfo is None:
                         expires_at = expires_at.replace(tzinfo=timezone.utc)
                     expires_at = expires_at.isoformat()
