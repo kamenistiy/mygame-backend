@@ -6,31 +6,35 @@ from services.player_service import recalc_derived_stats
 # Словарь с данными состояний (иконки, типы)
 STATE_INFO = {
     'exhaustion': {
-    'name': 'Истощение',
-    'type': 'debuff',
-    'icon_class': 'state-exhaustion',
-    'duration': 10,
-    'modifiers': {
-        'hp_delta': -50,
-        'mana_delta': -50
-    }
+        'name': 'Истощение',
+        'type': 'debuff',
+        'icon_class': 'state-exhaustion',
+        'duration': 10,
+        'description': '-50 Здоровье, -50 Маны',
+        'modifiers': {
+            'hp_delta': -50,
+            'mana_delta': -50
+        }
     },
     'weakness': {
         'name': 'Слабость',
         'type': 'debuff',
         'icon_class': 'state-weakness',
+        'description': '-1 Тел, -1 Сил, -1 Лов, -1 Инт',
         'modifiers': {'body': -1, 'strength': -1, 'agility': -1, 'intellect': -1},
     },
     'inspiration': {
         'name': 'Воодушевление',
         'type': 'buff',
         'icon_class': 'state-inspiration',
+        'description': '+1 Тел, +1 Сил, +1 Лов, +1 Инт',
         'modifiers': {'body': 1, 'strength': 1, 'agility': 1, 'intellect': 1},
     },
     'rage': {
         'name': 'Ярость',
         'type': 'buff',
         'icon_class': 'state-rage',
+        'description': '+10 Физ. урон, +10 Маг. урон, -5 Физ. защита, -5 Маг. защита',
         'modifiers': {'pat': 10, 'mat': 10, 'pdf': -5, 'mdf': -5},
     }
 }
@@ -117,6 +121,7 @@ def get_active_states(user_id: str):
                     "name": info.get("name", state_key),
                     "type": info.get("type", "debuff"),
                     "icon_class": info.get("icon_class", ""),
+                    "description": info.get("description", ""),
                     "parameters": params,
                     "expires_at": expires_at
                 })
