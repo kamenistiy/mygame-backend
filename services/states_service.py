@@ -107,6 +107,9 @@ def get_active_states(user_id: str):
 
                 expires_at = row.get("expires_at")
                 if expires_at:
+                    # Если время без tzinfo — считаем его UTC
+                    if expires_at.tzinfo is None:
+                        expires_at = expires_at.replace(tzinfo=timezone.utc)
                     expires_at = expires_at.isoformat()
 
                 states.append({
