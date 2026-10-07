@@ -99,8 +99,8 @@ def use_item_logic(user_id: str, req, conn, cur):
             raise HTTPException(status_code=400, detail="Недостаточно предметов")
 
         cur.execute("""
-            INSERT INTO avatar_requests (user_id, status, username)
-            VALUES (%s, 'pending', (SELECT username FROM players WHERE id = %s))
+            INSERT INTO avatar_requests (user_id, status)
+            VALUES (%s, 'pending')
             RETURNING id
         """, (user_id, user_id))
 

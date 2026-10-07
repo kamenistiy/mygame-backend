@@ -10,7 +10,7 @@ STATE_INFO = {
         'type': 'debuff',
         'icon_class': 'state-exhaustion',
         'duration': 10,
-        'description': '-50 Здоровье, -50 Маны',
+        'description': '-50 Здоровье, -50 Мана',
         'modifiers': {
             'hp_delta': -50,
             'mana_delta': -50

@@ -233,10 +233,10 @@ def add_default_avatars_for_user(user_id: str):
                        'default_avatars/X.png']
             for path in avatars:
                 cur.execute("""
-                    INSERT INTO user_avatars (user_id, storage_path, is_active, username)
-                    VALUES (%s, %s, false, (SELECT username FROM players WHERE id = %s))
+                    INSERT INTO user_avatars (user_id, storage_path, is_active)
+                    VALUES (%s, %s, false)
                     ON CONFLICT (user_id, storage_path) DO NOTHING
-                """, (user_id, path, user_id))
+                """, (user_id, path))
             conn.commit()
 
 def add_achievement_for_user(user_id: str, achievement_id: str):
