@@ -7,7 +7,7 @@ router = APIRouter(prefix="/states", tags=["states"])
 class ApplyStateRequest(BaseModel):
     user_id: str
     state_key: str
-    duration_seconds: int = 10
+    duration_seconds: int = 60
 
 @router.post("/apply")
 def apply_state_endpoint(req: ApplyStateRequest):
