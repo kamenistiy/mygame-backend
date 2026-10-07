@@ -157,6 +157,7 @@ def get_player_position(user_id: str):
                     pp.current_region_id,
                     pp.current_city_id,
                     r.name AS region_name,
+                    r.travel_background,
                     s.name AS city_name,
                     (
                         SELECT COUNT(*) FROM player_positions pp2
@@ -170,12 +171,13 @@ def get_player_position(user_id: str):
             pos = cur.fetchone()
             if not pos:
                 return {"region_id": None, "city_id": None, "region_name": None,
-                        "city_name": None, "players_count": 0}
+                        "city_name": None, "travel_background": None, "players_count": 0}
 
             return {
                 "region_id": pos['current_region_id'],
                 "city_id": pos['current_city_id'],
                 "region_name": pos['region_name'],
+                "travel_background": pos['travel_background'], 
                 "city_name": pos['city_name'],
                 "players_count": pos['players_count'] or 0,
                 "in_movement": movement is not None,
