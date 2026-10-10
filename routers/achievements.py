@@ -1,4 +1,4 @@
-from fastapi import APIRouter
+from fastapi import APIRouter, HTTPException
 from core.db import get_db
 from pydantic import BaseModel
 
@@ -142,3 +142,25 @@ def revoke_unique_achievement(req: dict):
                         (achievement_id,))
             conn.commit()
             return {"success": True}
+
+@router.get("/achievements/by-user/{user_id}")
+def get_achievements_by_user(user_id: str):
+    """Все достижения игрока с именами/иконками — для публичного профиля."""
+    with get_db() as conn:
+        with conn.cursor() as cur:
+            cur.execute("""
+                SELECT
+                    a.id,
+                    a.name,
+                    a.description,
+                    a.icon,
+                    a.is_unique,
+                    a.max_progress,
+                    COALESCE(ua.current_progress, 0) AS current_progress,
+                    COALESCE(ua.is_unlocked, FALSE)  AS is_unlocked
+                FROM achievements a
+                LEFT JOIN user_achievements ua
+                    ON ua.achievement_id = a.id AND ua.user_id = %s
+                ORDER BY COALESCE(ua.is_unlocked, FALSE) DESC, a.id
+            """, (user_id,))
+            return {"achievements": cur.fetchall() or []}
