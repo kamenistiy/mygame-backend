@@ -18,6 +18,8 @@ from services.player_service import (
 from services.inventory_service import remove_item_from_inventory
 from services.achievement_service import grant_achievement_if_not_obtained, update_achievement_progress_logic
 from datetime import datetime, timezone, timedelta
+from services.research_service import roll_event, pick_random_text
+
 import random
 
 # ====== Константы для сборки URL аватара ======
@@ -517,13 +519,13 @@ def get_rating():
 
 @router.post("/research/step")
 def do_research_step(user_id: str):
-    """Игрок делает шаг по региону. Даёт +1 к steps и запускает кулдаун."""
     with get_db() as conn:
         with conn.cursor() as cur:
             cur.execute("""
-                SELECT steps, spd, next_step_at
-                FROM player_stats
-                WHERE user_id = %s
+                SELECT steps, spd, next_step_at, current_region_id
+                FROM player_stats ps
+                LEFT JOIN player_positions pp ON pp.user_id = ps.user_id
+                WHERE ps.user_id = %s
             """, (user_id,))
             row = cur.fetchone()
             if not row:
@@ -534,20 +536,18 @@ def do_research_step(user_id: str):
             if next_at and next_at.tzinfo is None:
                 next_at = next_at.replace(tzinfo=timezone.utc)
 
-            # Проверка кулдауна
             if next_at and next_at > now:
                 remaining = int((next_at - now).total_seconds())
                 raise HTTPException(429, f"Идёт исследование — осталось {remaining} сек")
 
-            # Рандомная база 5–30 сек, минус бонус скорости исследования
+            # Кулдаун (та же формула)
             base = random.randint(5, 30)
             spd_raw = row['spd'] or 0
-            # spd_raw / 10 = процент бонуса. Например spd_raw=200 → 20%
             factor = max(0.1, 1 - (spd_raw / 1000))
             cooldown = max(1, int(base * factor))
-
             new_next_at = now + timedelta(seconds=cooldown)
 
+            # +1 шаг
             cur.execute("""
                 UPDATE player_stats
                 SET steps = steps + 1,
@@ -557,10 +557,72 @@ def do_research_step(user_id: str):
                 RETURNING steps
             """, (new_next_at, cooldown, user_id))
             new_steps = cur.fetchone()['steps']
+
+            # Ролл события
+            region_id = row['current_region_id']
+            encounters = {}
+            if region_id:
+                cur.execute("SELECT encounters FROM regions WHERE id = %s", (region_id,))
+                r = cur.fetchone()
+                if r and r['encounters']:
+                    encounters = r['encounters']
+
+            event_key = roll_event(encounters)
+
+            event = {"type": event_key}
+
+            if event_key == 'text':
+                text_data = pick_random_text(cur, user_id)
+                if text_data:
+                    event.update(text_data)
+                else:
+                    event['content'] = 'Пока ни одного текста не одобрено. Загляни позже.'
+            else:
+                # Заглушки для остальных событий
+                placeholders = {
+                    'item': 'Найден предмет (скоро)',
+                    'combat': 'Вас атаковали! (скоро)',
+                    'resource': 'Собраны ресурсы (скоро)',
+                    'trap': 'Ловушка! (скоро)',
+                    'secret': 'Вы нашли секрет (скоро)'
+                }
+                event['content'] = placeholders.get(event_key, 'Событие (скоро)')
+
             conn.commit()
 
             return {
                 "steps": new_steps,
                 "cooldown_seconds": cooldown,
-                "next_step_at": new_next_at.isoformat()
+                "next_step_at": new_next_at.isoformat(),
+                "event": event
             }
+
+@router.post("/research/texts/{text_id}/like")
+def like_text(text_id: str, user_id: str):
+    with get_db() as conn:
+        with conn.cursor() as cur:
+            cur.execute("""
+                INSERT INTO research_text_likes (user_id, text_id)
+                VALUES (%s, %s)
+                ON CONFLICT (user_id, text_id) DO NOTHING
+            """, (user_id, text_id))
+            conn.commit()
+
+            cur.execute("SELECT COUNT(*) AS cnt FROM research_text_likes WHERE text_id = %s", (text_id,))
+            likes = cur.fetchone()['cnt']
+            return {"likes": int(likes), "user_liked": True}
+
+
+@router.delete("/research/texts/{text_id}/like")
+def unlike_text(text_id: str, user_id: str):
+    with get_db() as conn:
+        with conn.cursor() as cur:
+            cur.execute("""
+                DELETE FROM research_text_likes
+                WHERE user_id = %s AND text_id = %s
+            """, (user_id, text_id))
+            conn.commit()
+
+            cur.execute("SELECT COUNT(*) AS cnt FROM research_text_likes WHERE text_id = %s", (text_id,))
+            likes = cur.fetchone()['cnt']
+            return {"likes": int(likes), "user_liked": False}
