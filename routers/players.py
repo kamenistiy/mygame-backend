@@ -487,7 +487,7 @@ def get_rating():
                     0                        AS pve_rare,
                     0                        AS pve_epic,
                     COALESCE(ps.unic, 0)     AS unic,
-                    COALESCE(ps.zone, 0)     AS zone,
+                    COALESCE(ps.steps, 0)     AS steps,
                     COALESCE((
                         SELECT COUNT(*) FROM user_achievements ua
                         WHERE ua.user_id = p.id AND ua.is_unlocked = true
