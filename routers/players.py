@@ -17,6 +17,9 @@ from services.player_service import (
 )
 from services.inventory_service import remove_item_from_inventory
 from services.achievement_service import grant_achievement_if_not_obtained, update_achievement_progress_logic
+from datetime import datetime, timezone, timedelta
+import random
+
 # ====== Константы для сборки URL аватара ======
 SUPABASE_STORAGE_BASE = "https://onkpedemixygmtllrehp.supabase.co/storage/v1/object/public"
 AVATARS_BUCKET = "avatars"
@@ -241,7 +244,7 @@ def get_player_stats(user_id: str):
                     current_hp, max_hp, current_mana, max_mana,
                     current_energy, max_energy, free_stat_points,
                     pdf, mdf, pat, mat, ddg, acc, sp, crft, spd, gat, awr,
-                    fame, rep, ins, pvp, pve, unic, zone,
+                    fame, rep, ins, pvp, pve, unic, steps, next_step_at, cooldown_duration,
                     p.level
                 FROM player_stats ps
                 JOIN players p ON p.id = ps.user_id
@@ -293,7 +296,9 @@ def get_player_stats(user_id: str):
                 "pvp": row['pvp'] or 0,
                 "pve": row['pve'] or 0,
                 "unic": row['unic'] or 0,
-                "zone": row['zone'] or 0,
+                "steps": row['steps'] or 0,
+                "next_step_at": row['next_step_at'].isoformat() if row['next_step_at'] else None,
+                "cooldown_duration": row['cooldown_duration'] or 0,
             }
         
 @router.post("/player/stats/update")
@@ -509,3 +514,53 @@ def get_rating():
                 row['avatar_url'] = _build_avatar_url(row.pop('avatar_path', None)) or 'images/avatar.webp'
 
             return {"players": rows}
+
+@router.post("/research/step")
+def do_research_step(user_id: str):
+    """Игрок делает шаг по региону. Даёт +1 к steps и запускает кулдаун."""
+    with get_db() as conn:
+        with conn.cursor() as cur:
+            cur.execute("""
+                SELECT steps, spd, next_step_at
+                FROM player_stats
+                WHERE user_id = %s
+            """, (user_id,))
+            row = cur.fetchone()
+            if not row:
+                raise HTTPException(404, "Stats not found")
+
+            now = datetime.now(timezone.utc)
+            next_at = row['next_step_at']
+            if next_at and next_at.tzinfo is None:
+                next_at = next_at.replace(tzinfo=timezone.utc)
+
+            # Проверка кулдауна
+            if next_at and next_at > now:
+                remaining = int((next_at - now).total_seconds())
+                raise HTTPException(429, f"Идёт исследование — осталось {remaining} сек")
+
+            # Рандомная база 5–30 сек, минус бонус скорости исследования
+            base = random.randint(5, 30)
+            spd_raw = row['spd'] or 0
+            # spd_raw / 10 = процент бонуса. Например spd_raw=200 → 20%
+            factor = max(0.1, 1 - (spd_raw / 1000))
+            cooldown = max(1, int(base * factor))
+
+            new_next_at = now + timedelta(seconds=cooldown)
+
+            cur.execute("""
+                UPDATE player_stats
+                SET steps = steps + 1,
+                    next_step_at = %s,
+                    cooldown_duration = %s
+                WHERE user_id = %s
+                RETURNING steps
+            """, (new_next_at, cooldown, user_id))
+            new_steps = cur.fetchone()['steps']
+            conn.commit()
+
+            return {
+                "steps": new_steps,
+                "cooldown_seconds": cooldown,
+                "next_step_at": new_next_at.isoformat()
+            }
