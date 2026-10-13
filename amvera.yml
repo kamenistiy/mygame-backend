@@ -1,4 +1,3 @@
----
 meta:
   environment: docker
   toolchain:
@@ -9,8 +8,5 @@ build:
   skip: false
 run:
   persistenceMount: /data
-  image: null
-  command: ""
-  args: null
   containerPort: 8080
   servicePort: 80
