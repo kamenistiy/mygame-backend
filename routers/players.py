@@ -247,7 +247,8 @@ def get_player_stats(user_id: str):
                     current_energy, max_energy, free_stat_points,
                     pdf, mdf, pat, mat, ddg, acc, sp, crft, spd, gat, awr,
                     fame, rep, ins, pvp, pve, unic, steps, next_step_at, cooldown_duration,
-                    p.level
+                    p.level,
+                    COALESCE(p.approved_texts_count, 0) AS approved_texts_count
                 FROM player_stats ps
                 JOIN players p ON p.id = ps.user_id
                 WHERE ps.user_id = %s
@@ -292,6 +293,7 @@ def get_player_stats(user_id: str):
                 "crft": row['crft'] or 0,
                 "spd": row['spd'], "gat": row['gat'], "awr": row['awr'],
                 # Заслуги / свершения
+                "approved_texts_count": row['approved_texts_count'] or 0,
                 "fame": row['fame'] or 0,
                 "rep": row['rep'] or 0,
                 "ins": row['ins'] or 0,
@@ -479,6 +481,7 @@ def get_rating():
                     COALESCE(ps.spd, 0)      AS spd,
                     COALESCE(ps.gat, 0)      AS gat,
                     COALESCE(ps.awr, 0)      AS awr,
+                    COALESCE(p.approved_texts_count, 0) AS notes,
                     COALESCE(ps.fame, 0)     AS fame,
                     COALESCE(ps.rep, 0)      AS rep,
                     COALESCE(ps.ins, 0)      AS ins,

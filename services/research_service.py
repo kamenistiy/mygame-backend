@@ -244,8 +244,8 @@ def approve_text(text_id: str, admin_id: str) -> dict:
     add_notification(
         str(author_id),
         'research_text_approved',
-        'Путевой текст одобрен',
-        f'Ваш путевой текст «{theme}» одобрен и добавлен в игру.'
+        '📜 Заметка одобрена!',
+        f'Ваша заметка на тему «{theme}» одобрена и добавлена в игру. Благодарим за вклад!'
     )
 
     return {"id": str(text_id), "author_id": str(author_id), "theme": theme}
@@ -276,8 +276,8 @@ def reject_text(text_id: str, admin_id: str, comment: str) -> dict:
     add_notification(
         str(author_id),
         'research_text_rejected',
-        'Путевой текст отклонён',
-        f'Ваш путевой текст «{theme}» отклонён. Причина: {comment}'
+        '📜 Заметка отклонена',
+        f'Ваша заметка на тему «{theme}» не прошла проверку. Причина: {comment}'
     )
 
     return {"id": str(text_id), "author_id": str(author_id)}
