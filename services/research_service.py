@@ -2,6 +2,7 @@ import random
 import re
 from pathlib import Path
 from core.db import get_db
+from services.player_service import required_exp
 from services.notification_service import add_notification
 
 
@@ -281,3 +282,21 @@ def reject_text(text_id: str, admin_id: str, comment: str) -> dict:
     )
 
     return {"id": str(text_id), "author_id": str(author_id)}
+
+# Веса опыта (в процентах от required_exp)
+XP_WEIGHTS = {
+    'text': 0.0006,
+    'resource': 0.0008,
+    'item': 0.0010,
+    'trap': 0.0012,
+    'secret': 0.0025,
+    'combat': 0.0004, # только за встречу
+    'victory': 0.0016 # дополнительно за победу
+}
+
+def calc_research_xp(level: int, event_type: str) -> int:
+    """Считает опыт за событие с разбросом ±30%"""
+    base = XP_WEIGHTS.get(event_type, 0.0006)
+    req = required_exp(level)
+    xp = req * base * random.uniform(0.7, 1.3)
+    return max(1, round(xp))

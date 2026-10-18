@@ -18,7 +18,7 @@ from services.player_service import (
 from services.inventory_service import remove_item_from_inventory
 from services.achievement_service import grant_achievement_if_not_obtained, update_achievement_progress_logic
 from datetime import datetime, timezone, timedelta
-from services.research_service import roll_event, pick_random_text
+from services.research_service import roll_event, pick_random_text, calc_research_xp
 
 import random
 
@@ -550,7 +550,7 @@ def do_research_step(user_id: str):
             cooldown = max(1, int(base * factor))
             new_next_at = now + timedelta(seconds=cooldown)
 
-            # +1 шаг
+                        # 1. Обновляем шаги
             cur.execute("""
                 UPDATE player_stats
                 SET steps = steps + 1,
@@ -561,7 +561,7 @@ def do_research_step(user_id: str):
             """, (new_next_at, cooldown, user_id))
             new_steps = cur.fetchone()['steps']
 
-            # Ролл события
+            # 2. Ролл события
             region_id = row['current_region_id']
             encounters = {}
             if region_id:
@@ -572,8 +572,57 @@ def do_research_step(user_id: str):
 
             event_key = roll_event(encounters)
 
-            event = {"type": event_key}
+            # 3. Начисление опыта
+            cur.execute("SELECT level, exp FROM players WHERE id = %s", (user_id,))
+            p_row = cur.fetchone()
+            p_level = p_row['level']
+            p_exp = p_row['exp']
 
+            # Считаем опыт (пока только для не-боевых событий, бой сделаем позже)
+            xp_gained = 0
+            if event_key != 'combat':
+                xp_gained = calc_research_xp(p_level, event_key)
+            
+            new_exp = p_exp + xp_gained
+            new_level = p_level
+            level_up_data = None
+
+            # Проверка на повышение уровня
+            while new_exp >= required_exp(new_level):
+                new_exp -= required_exp(new_level)
+                new_level += 1
+
+            if new_level > p_level:
+                # Игрок апнул уровень!
+                cur.execute("SELECT steps_on_level_start FROM player_stats WHERE user_id = %s", (user_id,))
+                start_steps = cur.fetchone()['steps_on_level_start']
+                
+                # Считаем, сколько шагов сделано за этот уровень
+                steps_this_level = new_steps - start_steps
+                if steps_this_level < 0: steps_this_level = new_steps # защита от багов
+
+                # Выдаем очки (2 за уровень) и обновляем метку шагов
+                cur.execute("""
+                    UPDATE player_stats
+                    SET free_stat_points = free_stat_points + %s,
+                        steps_on_level_start = %s
+                    WHERE user_id = %s
+                """, ((new_level - p_level) * 2, new_steps, user_id))
+
+                level_up_data = {
+                    "from_level": p_level,
+                    "to_level": new_level,
+                    "steps_this_level": steps_this_level,
+                    "free_points_gained": (new_level - p_level) * 2
+                }
+
+            # Обновляем игрока
+            cur.execute("UPDATE players SET exp = %s, level = %s WHERE id = %s", (new_exp, new_level, user_id))
+
+            # 4. Формируем событие
+            event = {"type": event_key, "xp_gained": xp_gained}
+            
+            # ... (остальной код для text, placeholders и т.д. остается без изменений)
             if event_key == 'text':
                 text_data = pick_random_text(cur, user_id)
                 if text_data:
@@ -581,7 +630,6 @@ def do_research_step(user_id: str):
                 else:
                     event['content'] = 'Пока ни одного текста не одобрено. Загляни позже.'
             else:
-                # Заглушки для остальных событий
                 placeholders = {
                     'item': 'Найден предмет (скоро)',
                     'combat': 'Вас атаковали! (скоро)',
@@ -597,7 +645,8 @@ def do_research_step(user_id: str):
                 "steps": new_steps,
                 "cooldown_seconds": cooldown,
                 "next_step_at": new_next_at.isoformat(),
-                "event": event
+                "event": event,
+                "level_up": level_up_data  # <--- Отдаем данные для окна апа
             }
 
 @router.post("/research/texts/{text_id}/like")
