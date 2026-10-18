@@ -37,6 +37,24 @@ STATE_INFO = {
         'description': '+10 Физ. урон, +10 Маг. урон, -5 Физ. защита, -5 Маг. защита',
         'modifiers': {'pat': 10, 'mat': 10, 'pdf': -5, 'mdf': -5},
     }
+    'fatigue_300': {
+    'name': 'Утомление',
+    'description': 'Сегодня вы выполнили 300 Исследований! Минимальный КД увеличен до 7 сек.',
+    'type': 'debuff',
+    'icon_class': 'state-fatigue300'
+    },
+    'fatigue_500': {
+        'name': 'Упадок сил',
+        'description': 'Сегодня вы выполнили 500 Исследований! Минимальный КД увеличен до 9 сек.',
+        'type': 'debuff',
+        'icon_class': 'state-fatigue500'
+    },
+    'fatigue_1000': {
+        'name': 'Измор',
+        'description': 'Сегодня вы выполнили 1000 Исследований! Минимальный КД увеличен до 12 сек.',
+        'type': 'debuff',
+        'icon_class': 'state-fatigue1000'
+    }
 }
 
 def apply_state(user_id: str, state_key: str, duration_seconds: int = 10):

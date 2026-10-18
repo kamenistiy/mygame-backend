@@ -3,8 +3,7 @@ from pydantic import BaseModel
 from typing import Optional
 from core.db import get_db
 from services.achievement_service import update_achievement_progress_logic
-from services.states_service import (check_expired_states,
-    get_active_states)
+from services.states_service import (check_expired_states, get_active_states, apply_state)
 from core.supabase_client import supabase
 from services.notification_service import add_notification
 from services.player_service import (
@@ -17,7 +16,7 @@ from services.player_service import (
 )
 from services.inventory_service import remove_item_from_inventory
 from services.achievement_service import grant_achievement_if_not_obtained, update_achievement_progress_logic
-from datetime import datetime, timezone, timedelta
+from datetime import date, datetime, timezone, time as dt_time, timedelta
 from services.research_service import roll_event, pick_random_text, calc_research_xp
 
 import random
@@ -531,6 +530,42 @@ def do_research_step(user_id: str):
                 WHERE ps.user_id = %s
             """, (user_id,))
             row = cur.fetchone()
+            now = datetime.now(timezone.utc)
+            today = now.date()
+
+            # Проверка на смену суток (сброс шагов)
+            cur.execute("SELECT steps_today, last_step_date FROM player_stats WHERE user_id = %s", (user_id,))
+            st_row = cur.fetchone()
+            steps_today = st_row['steps_today']
+            if st_row['last_step_date'] != today:
+                steps_today = 0
+                cur.execute("UPDATE player_stats SET steps_today = 0, last_step_date = %s WHERE user_id = %s", (today, user_id))
+
+            # ... (дальше идет проверка кулдауна next_at > now)
+
+            # После успешного прохождения кулдауна и до расчета base = random.choice:
+            steps_today += 1
+            # Время окончания суток (следующая полночь UTC)
+            tomorrow = now + timedelta(days=1)
+            expires_at = datetime.combine(tomorrow, dt_time.min, tzinfo=timezone.utc)
+
+            if steps_today == 300:
+                apply_state(user_id, 'fatigue_300', expires_at=expires_at)
+            elif steps_today == 500:
+                apply_state(user_id, 'fatigue_500', expires_at=expires_at)
+            elif steps_today == 1000:
+                apply_state(user_id, 'fatigue_1000', expires_at=expires_at)
+            cur.execute("UPDATE player_stats SET steps_today = %s WHERE user_id = %s", (steps_today, user_id))
+
+            # Определяем минимальный КД с учетом усталости
+            min_cd = 5
+            if steps_today >= 1000: min_cd = 12
+            elif steps_today >= 500: min_cd = 9
+            elif steps_today >= 300: min_cd = 7
+
+            # ... (расчет base и factor)
+            cooldown = max(min_cd, int(base * factor))
+
             if not row:
                 raise HTTPException(404, "Stats not found")
 
@@ -544,11 +579,11 @@ def do_research_step(user_id: str):
                 raise HTTPException(429, f"Идёт исследование — осталось {remaining} сек")
 
             # Кулдаун (та же формула)
-            base = random.randint(5, 30)
+            # Шаг разброса теперь 5 секунд: 5, 10, 15... 40
+            base = random.choice(range(5, 41, 5)) 
             spd_raw = row['spd'] or 0
-            factor = max(0.1, 1 - (spd_raw / 1000))
-            cooldown = max(1, int(base * factor))
-            new_next_at = now + timedelta(seconds=cooldown)
+            factor = max(0.1, 1 - (spd_raw / 2000)) # Снизили вес spd вдвое
+            cooldown = max(5, int(base * factor)) # Минимальный КД 5 секунд
 
                         # 1. Обновляем шаги
             cur.execute("""

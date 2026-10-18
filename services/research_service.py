@@ -295,8 +295,12 @@ XP_WEIGHTS = {
 }
 
 def calc_research_xp(level: int, event_type: str) -> int:
-    """Считает опыт за событие с разбросом ±30%"""
     base = XP_WEIGHTS.get(event_type, 0.0006)
     req = required_exp(level)
     xp = req * base * random.uniform(0.7, 1.3)
+    
+    # Микробуст для новичков (до 10 уровня даем минимум 2 опыта за шаг)
+    if level <= 10:
+        xp = max(2.0, xp * 5)
+        
     return max(1, round(xp))
