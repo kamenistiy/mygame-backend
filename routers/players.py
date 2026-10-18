@@ -559,11 +559,11 @@ def do_research_step(user_id: str):
             # Определяем минимальный КД с учетом усталости
             min_cd = 5
             if steps_today >= 1000: 
-                min_cd = 12
+                min_cd = 10
             elif steps_today >= 500: 
-                min_cd = 9
+                min_cd = 8
             elif steps_today >= 300: 
-                min_cd = 7
+                min_cd = 6
 
             # Навешиваем дебаффы на пороговых значениях (напрямую в БД)
             if steps_today in [300, 500, 1000]:
@@ -586,7 +586,7 @@ def do_research_step(user_id: str):
                     """, (user_id, fatigue_key, expires_at))
 
             # 4. Расчет нового кулдауна
-            base = random.choice(range(5, 41, 5)) # Разброс 5, 10, 15... 40
+            base = random.randint(5, 30) # Разброс от 5 до 30 секунд
             spd_raw = row['spd'] or 0
             factor = max(0.1, 1 - (spd_raw / 2000))
             
