@@ -556,7 +556,7 @@ def do_research_step(user_id: str):
                 
             steps_today += 1
 
-            # Определяем минимальный КД с учетом усталости
+                        # Определяем минимальный КД с учетом усталости
             min_cd = 5
             if steps_today >= 1000: 
                 min_cd = 10
@@ -579,10 +579,16 @@ def do_research_step(user_id: str):
                     fatigue_key = 'fatigue_1000'
                 
                 if fatigue_key:
+                    # 1. УДАЛЯЕМ все старые стадии усталости
+                    cur.execute("""
+                        DELETE FROM player_states 
+                        WHERE user_id = %s AND state_key IN ('fatigue_300', 'fatigue_500', 'fatigue_1000')
+                    """, (user_id,))
+                    
+                    # 2. ДОБАВЛЯЕМ только новую
                     cur.execute("""
                         INSERT INTO player_states (user_id, state_key, expires_at)
                         VALUES (%s, %s, %s)
-                        ON CONFLICT (user_id, state_key) DO UPDATE SET expires_at = EXCLUDED.expires_at
                     """, (user_id, fatigue_key, expires_at))
 
             # 4. Расчет нового кулдауна
