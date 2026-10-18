@@ -3,7 +3,7 @@ from pydantic import BaseModel
 from typing import Optional
 from core.db import get_db
 from services.achievement_service import update_achievement_progress_logic
-from services.states_service import (check_expired_states, get_active_states, apply_state)
+from services.states_service import (check_expired_states, get_active_states)
 from core.supabase_client import supabase
 from services.notification_service import add_notification
 from services.player_service import (
@@ -565,17 +565,25 @@ def do_research_step(user_id: str):
             elif steps_today >= 300: 
                 min_cd = 7
 
-            # Навешиваем дебаффы на пороговых значениях
+            # Навешиваем дебаффы на пороговых значениях (напрямую в БД)
             if steps_today in [300, 500, 1000]:
                 tomorrow = now + timedelta(days=1)
                 expires_at = datetime.combine(tomorrow, dt_time.min, tzinfo=timezone.utc)
                 
+                fatigue_key = None
                 if steps_today == 300:
-                    apply_state(user_id, 'fatigue_300', expires_at=expires_at)
+                    fatigue_key = 'fatigue_300'
                 elif steps_today == 500:
-                    apply_state(user_id, 'fatigue_500', expires_at=expires_at)
+                    fatigue_key = 'fatigue_500'
                 elif steps_today == 1000:
-                    apply_state(user_id, 'fatigue_1000', expires_at=expires_at)
+                    fatigue_key = 'fatigue_1000'
+                
+                if fatigue_key:
+                    cur.execute("""
+                        INSERT INTO player_states (user_id, state_key, expires_at)
+                        VALUES (%s, %s, %s)
+                        ON CONFLICT (user_id, state_key) DO UPDATE SET expires_at = EXCLUDED.expires_at
+                    """, (user_id, fatigue_key, expires_at))
 
             # 4. Расчет нового кулдауна
             base = random.choice(range(5, 41, 5)) # Разброс 5, 10, 15... 40
