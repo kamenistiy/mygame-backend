@@ -523,6 +523,7 @@ def get_rating():
 def do_research_step(user_id: str):
     with get_db() as conn:
         with conn.cursor() as cur:
+            # 1. Получаем данные игрока
             cur.execute("""
                 SELECT steps, spd, next_step_at, current_region_id
                 FROM player_stats ps
@@ -530,42 +531,7 @@ def do_research_step(user_id: str):
                 WHERE ps.user_id = %s
             """, (user_id,))
             row = cur.fetchone()
-            now = datetime.now(timezone.utc)
-            today = now.date()
-
-            # Проверка на смену суток (сброс шагов)
-            cur.execute("SELECT steps_today, last_step_date FROM player_stats WHERE user_id = %s", (user_id,))
-            st_row = cur.fetchone()
-            steps_today = st_row['steps_today']
-            if st_row['last_step_date'] != today:
-                steps_today = 0
-                cur.execute("UPDATE player_stats SET steps_today = 0, last_step_date = %s WHERE user_id = %s", (today, user_id))
-
-            # ... (дальше идет проверка кулдауна next_at > now)
-
-            # После успешного прохождения кулдауна и до расчета base = random.choice:
-            steps_today += 1
-            # Время окончания суток (следующая полночь UTC)
-            tomorrow = now + timedelta(days=1)
-            expires_at = datetime.combine(tomorrow, dt_time.min, tzinfo=timezone.utc)
-
-            if steps_today == 300:
-                apply_state(user_id, 'fatigue_300', expires_at=expires_at)
-            elif steps_today == 500:
-                apply_state(user_id, 'fatigue_500', expires_at=expires_at)
-            elif steps_today == 1000:
-                apply_state(user_id, 'fatigue_1000', expires_at=expires_at)
-            cur.execute("UPDATE player_stats SET steps_today = %s WHERE user_id = %s", (steps_today, user_id))
-
-            # Определяем минимальный КД с учетом усталости
-            min_cd = 5
-            if steps_today >= 1000: min_cd = 12
-            elif steps_today >= 500: min_cd = 9
-            elif steps_today >= 300: min_cd = 7
-
-            # ... (расчет base и factor)
-            cooldown = max(min_cd, int(base * factor))
-
+            
             if not row:
                 raise HTTPException(404, "Stats not found")
 
@@ -574,29 +540,65 @@ def do_research_step(user_id: str):
             if next_at and next_at.tzinfo is None:
                 next_at = next_at.replace(tzinfo=timezone.utc)
 
+            # 2. Проверка кулдауна. Если КД еще идет — выходим с ошибкой 429
             if next_at and next_at > now:
                 remaining = int((next_at - now).total_seconds())
                 raise HTTPException(429, f"Идёт исследование — осталось {remaining} сек")
 
-            # Кулдаун (та же формула)
-            # Шаг разброса теперь 5 секунд: 5, 10, 15... 40
-            base = random.choice(range(5, 41, 5)) 
-            spd_raw = row['spd'] or 0
-            factor = max(0.1, 1 - (spd_raw / 2000)) # Снизили вес spd вдвое
-            cooldown = max(5, int(base * factor)) # Минимальный КД 5 секунд
+            # 3. Обработка ежедневных шагов и усталости
+            today = now.date()
+            cur.execute("SELECT steps_today, last_step_date FROM player_stats WHERE user_id = %s", (user_id,))
+            st_row = cur.fetchone()
+            steps_today = st_row['steps_today'] if st_row else 0
+            
+            if st_row and st_row['last_step_date'] != today:
+                steps_today = 0 # Сброс на новый день
+                
+            steps_today += 1
 
-                        # 1. Обновляем шаги
+            # Определяем минимальный КД с учетом усталости
+            min_cd = 5
+            if steps_today >= 1000: 
+                min_cd = 12
+            elif steps_today >= 500: 
+                min_cd = 9
+            elif steps_today >= 300: 
+                min_cd = 7
+
+            # Навешиваем дебаффы на пороговых значениях
+            if steps_today in [300, 500, 1000]:
+                tomorrow = now + timedelta(days=1)
+                expires_at = datetime.combine(tomorrow, dt_time.min, tzinfo=timezone.utc)
+                
+                if steps_today == 300:
+                    apply_state(user_id, 'fatigue_300', expires_at=expires_at)
+                elif steps_today == 500:
+                    apply_state(user_id, 'fatigue_500', expires_at=expires_at)
+                elif steps_today == 1000:
+                    apply_state(user_id, 'fatigue_1000', expires_at=expires_at)
+
+            # 4. Расчет нового кулдауна
+            base = random.choice(range(5, 41, 5)) # Разброс 5, 10, 15... 40
+            spd_raw = row['spd'] or 0
+            factor = max(0.1, 1 - (spd_raw / 2000))
+            
+            cooldown = max(min_cd, int(base * factor))
+            new_next_at = now + timedelta(seconds=cooldown)
+
+            # 5. Обновляем шаги, кулдаун и счетчик шагов за сегодня в БД
             cur.execute("""
                 UPDATE player_stats
                 SET steps = steps + 1,
                     next_step_at = %s,
-                    cooldown_duration = %s
+                    cooldown_duration = %s,
+                    steps_today = %s,
+                    last_step_date = %s
                 WHERE user_id = %s
                 RETURNING steps
-            """, (new_next_at, cooldown, user_id))
+            """, (new_next_at, cooldown, steps_today, today, user_id))
             new_steps = cur.fetchone()['steps']
 
-            # 2. Ролл события
+            # 6. Ролл события
             region_id = row['current_region_id']
             encounters = {}
             if region_id:
@@ -607,13 +609,12 @@ def do_research_step(user_id: str):
 
             event_key = roll_event(encounters)
 
-            # 3. Начисление опыта
+            # 7. Начисление опыта
             cur.execute("SELECT level, exp FROM players WHERE id = %s", (user_id,))
             p_row = cur.fetchone()
             p_level = p_row['level']
             p_exp = p_row['exp']
 
-            # Считаем опыт (пока только для не-боевых событий, бой сделаем позже)
             xp_gained = 0
             if event_key != 'combat':
                 xp_gained = calc_research_xp(p_level, event_key)
@@ -634,7 +635,8 @@ def do_research_step(user_id: str):
                 
                 # Считаем, сколько шагов сделано за этот уровень
                 steps_this_level = new_steps - start_steps
-                if steps_this_level < 0: steps_this_level = new_steps # защита от багов
+                if steps_this_level < 0: 
+                    steps_this_level = new_steps
 
                 # Выдаем очки (2 за уровень) и обновляем метку шагов
                 cur.execute("""
@@ -651,13 +653,12 @@ def do_research_step(user_id: str):
                     "free_points_gained": (new_level - p_level) * 2
                 }
 
-            # Обновляем игрока
+            # Обновляем игрока (опыт и уровень)
             cur.execute("UPDATE players SET exp = %s, level = %s WHERE id = %s", (new_exp, new_level, user_id))
 
-            # 4. Формируем событие
+            # 8. Формируем событие
             event = {"type": event_key, "xp_gained": xp_gained}
             
-            # ... (остальной код для text, placeholders и т.д. остается без изменений)
             if event_key == 'text':
                 text_data = pick_random_text(cur, user_id)
                 if text_data:
@@ -681,7 +682,7 @@ def do_research_step(user_id: str):
                 "cooldown_seconds": cooldown,
                 "next_step_at": new_next_at.isoformat(),
                 "event": event,
-                "level_up": level_up_data  # <--- Отдаем данные для окна апа
+                "level_up": level_up_data
             }
 
 @router.post("/research/texts/{text_id}/like")
