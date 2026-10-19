@@ -4,6 +4,7 @@ from pathlib import Path
 from core.db import get_db
 from services.player_service import required_exp
 from services.notification_service import add_notification
+from services.achievement_service import update_achievement_progress_logic
 
 
 # ================================================================
@@ -217,7 +218,7 @@ def list_pending(limit: int = 200) -> list[dict]:
 
 
 def approve_text(text_id: str, admin_id: str) -> dict:
-    """is_active = TRUE, счётчик автору +1, нотификация."""
+    """is_active = TRUE, счётчик автору +1, ачивки, нотификация."""
     with get_db() as conn:
         with conn.cursor() as cur:
             cur.execute("""
@@ -240,6 +241,15 @@ def approve_text(text_id: str, admin_id: str) -> dict:
                 WHERE id = %s
             """, (author_id,))
             conn.commit()
+
+    # ===== Начисление прогресса ачивок за тексты =====
+    # Вызываем ПОСЛЕ commit, т.к. функция открывает своё соединение
+    update_achievement_progress_logic(str(author_id), 'notesadd_1', 1)
+    update_achievement_progress_logic(str(author_id), 'notesadd_10', 1)
+    update_achievement_progress_logic(str(author_id), 'notesadd_50', 1)
+    update_achievement_progress_logic(str(author_id), 'notesadd_100', 1)
+    update_achievement_progress_logic(str(author_id), 'notesadd_200', 1)
+    update_achievement_progress_logic(str(author_id), 'notesadd_500', 1)
 
     # Нотификация — вне транзакции
     add_notification(

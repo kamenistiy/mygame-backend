@@ -3,7 +3,6 @@ from pydantic import BaseModel, Field
 
 from core.db import get_db
 from services import research_service
-from services.achievement_service import update_achievement_progress_logic
 
 
 router = APIRouter(tags=["research"])
@@ -63,49 +62,18 @@ def list_pending_texts(
 
 
 @router.post("/admin/research/texts/{text_id}/approve")
-def approve_text(text_id: str, admin_id: str) -> dict:
-    """is_active = TRUE, счётчик автору +1, ачивки, нотификация."""
-    with get_db() as conn:
-        with conn.cursor() as cur:
-            cur.execute("""
-                SELECT id, author_id, theme FROM research_texts
-                WHERE id = %s AND is_active = FALSE
-            """, (text_id,))
-            row = cur.fetchone()
-            if not row:
-                raise ValueError("Текст не найден или уже обработан")
-
-            author_id = row['author_id']
-            theme = row['theme'] or '(без темы)'
-
-            cur.execute(
-                "UPDATE research_texts SET is_active = TRUE WHERE id = %s",
-                (text_id,)
-            )
-            cur.execute("""
-                UPDATE players SET approved_texts_count = approved_texts_count + 1
-                WHERE id = %s
-            """, (author_id,))
-            conn.commit()
-
-    # ===== Начисление прогресса ачивок за тексты =====
-    # Вызываем ПОСЛЕ commit, т.к. функция открывает своё соединение
-    update_achievement_progress_logic(str(author_id), 'notesadd_1', 1)
-    update_achievement_progress_logic(str(author_id), 'notesadd_10', 1)
-    update_achievement_progress_logic(str(author_id), 'notesadd_50', 1)
-    update_achievement_progress_logic(str(author_id), 'notesadd_100', 1)
-    update_achievement_progress_logic(str(author_id), 'notesadd_200', 1)
-    update_achievement_progress_logic(str(author_id), 'notesadd_500', 1)
-
-    # Нотификация — вне транзакции
-    add_notification(
-        str(author_id),
-        'research_text_approved',
-        '📜 Заметка одобрена!',
-        f'Ваша заметка на тему «{theme}» одобрена и добавлена в игру. Благодарим за вклад!'
-    )
-
-    return {"id": str(text_id), "author_id": str(author_id), "theme": theme}
+def approve_text(
+    text_id: str,
+    x_user_id: str = Header(..., alias="x-user-id"), # <--- Берем из заголовка!
+):
+    uid = _require_user(x_user_id)
+    _require_admin(uid)
+    try:
+        # Передаем uid (ID админа) в сервис вторым аргументом
+        result = research_service.approve_text(text_id, uid)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    return {"ok": True, **result}
 
 
 
