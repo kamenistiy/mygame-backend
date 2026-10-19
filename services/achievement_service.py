@@ -120,8 +120,11 @@ def grant_achievement_if_not_obtained(user_id: str, achievement_id: str):
 
             print("✅ DONE")
             return True
+            
 def update_achievement_progress_logic(user_id: str, achievement_id: str, increment: int = 1):
     """Увеличивает прогресс достижения. Если достижение выполнено – выдаёт награду."""
+    should_grant = False  # Флаг, что нужно выдать награду после закрытия транзакции
+    
     with get_db() as conn:
         with conn.cursor() as cur:
             # Получаем max_progress и текущую запись
@@ -159,9 +162,13 @@ def update_achievement_progress_logic(user_id: str, achievement_id: str, increme
                 SET current_progress = %s
                 WHERE user_id = %s AND achievement_id = %s
             """, (new_progress, user_id, achievement_id))
+            
+            # ⚠️ ВАЖНО: Сохраняем прогресс и снимаем блокировку БД ДО выдачи наград!
+            conn.commit() 
 
             if new_progress >= max_progress:
-                # Достижение выполнено – выдаём награду
-                grant_achievement_if_not_obtained(user_id, achievement_id)
-
-            conn.commit()
+                should_grant = True
+    
+    # Вызываем вне транзакции (когда соединение уже закрыто), чтобы не было дедлока
+    if should_grant:
+        grant_achievement_if_not_obtained(user_id, achievement_id)
