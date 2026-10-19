@@ -64,17 +64,18 @@ def grant_achievement_if_not_obtained(user_id: str, achievement_id: str):
 
                 return False
 
+                        # ... выше идет проверка existing ...
+
             print("LOADING REWARD")
 
+            # 1. Добавляем gems_reward в SELECT
             cur.execute("""
-                SELECT name, exp_reward, coins_reward
+                SELECT name, exp_reward, coins_reward, gems_reward
                 FROM achievements
                 WHERE id = %s
             """, (achievement_id,))
 
             reward = cur.fetchone()
-
-            print("REWARD =", reward)
 
             if not reward:
                 print(f"❌ Достижение {achievement_id} не найдено")
@@ -92,11 +93,21 @@ def grant_achievement_if_not_obtained(user_id: str, achievement_id: str):
 
             print("ADDING EXP/COINS")
 
+            # 2. Выдаем опыт и монеты (как было)
             add_exp_and_coins(
                 user_id,
                 exp_to_add=reward['exp_reward'],
                 coins_to_add=reward['coins_reward']
             )
+
+            # 3. Выдаем путевые камни (gems), если они есть
+            if reward.get('gems_reward') and reward['gems_reward'] > 0:
+                cur.execute("""
+                    UPDATE players 
+                    SET pathgems = COALESCE(pathgems, 0) + %s 
+                    WHERE id = %s
+                """, (reward['gems_reward'], user_id))
+                conn.commit()
 
             print("ADDING NOTIFICATION")
 
