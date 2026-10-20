@@ -26,7 +26,7 @@ def get_all_achievements():
 def get_user_achievement_progress(user_id: str):
     conn = get_db()
     cur = conn.cursor()
-    cur.execute("SELECT achievement_id, current_progress, is_unlocked FROM user_achievements WHERE user_id = %s", (user_id,))
+    cur.execute("SELECT achievement_id, current_progress, is_unlocked, unlocked_at FROM user_achievements WHERE user_id = %s", (user_id,))
     rows = cur.fetchall()
     cur.close()
     conn.close()
@@ -158,6 +158,7 @@ def get_achievements_by_user(user_id: str):
                     a.max_progress,
                     COALESCE(ua.current_progress, 0) AS current_progress,
                     COALESCE(ua.is_unlocked, FALSE)  AS is_unlocked
+                    ua.unlocked_at
                 FROM achievements a
                 LEFT JOIN user_achievements ua
                     ON ua.achievement_id = a.id AND ua.user_id = %s

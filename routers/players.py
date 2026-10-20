@@ -611,6 +611,13 @@ def do_research_step(user_id: str):
                 RETURNING steps
             """, (new_next_at, cooldown, steps_today, today, user_id))
             new_steps = cur.fetchone()['steps']
+            # ===== Начисление прогресса ачивок за шаги =====
+            update_achievement_progress_logic(user_id, 'research_10', 1)
+            update_achievement_progress_logic(user_id, 'research_100', 1)
+            update_achievement_progress_logic(user_id, 'research_200', 1)
+            update_achievement_progress_logic(user_id, 'research_500', 1)
+            update_achievement_progress_logic(user_id, 'research_1000', 1)
+            update_achievement_progress_logic(user_id, 'research_3000', 1)
 
             # 6. Ролл события
             region_id = row['current_region_id']
