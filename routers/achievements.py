@@ -157,7 +157,7 @@ def get_achievements_by_user(user_id: str):
                     a.is_unique,
                     a.max_progress,
                     COALESCE(ua.current_progress, 0) AS current_progress,
-                    COALESCE(ua.is_unlocked, FALSE)  AS is_unlocked
+                    COALESCE(ua.is_unlocked, FALSE)  AS is_unlocked,
                     ua.unlocked_at
                 FROM achievements a
                 LEFT JOIN user_achievements ua
