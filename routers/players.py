@@ -1,4 +1,4 @@
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, BackgroundTasks
 from pydantic import BaseModel
 from typing import Optional
 from core.db import get_db
@@ -519,8 +519,37 @@ def get_rating():
 
             return {"players": rows}
 
+def process_research_achievements(user_id: str):
+    """Фоновая задача для обновления ачивок за шаги"""
+    with get_db() as conn:
+        with conn.cursor() as cur:
+            cur.execute("""
+                UPDATE user_achievements ua
+                SET current_progress = LEAST(ua.current_progress + 1, a.max_progress)
+                FROM achievements a
+                WHERE ua.user_id = %s 
+                  AND ua.achievement_id = a.id
+                  AND ua.achievement_id IN ('research_10', 'research_100', 'research_200', 'research_500', 'research_1000', 'research_3000')
+                  AND ua.is_unlocked = false;
+            """, (user_id,))
+
+            cur.execute("""
+                SELECT ua.achievement_id 
+                FROM user_achievements ua
+                JOIN achievements a ON ua.achievement_id = a.id
+                WHERE ua.user_id = %s 
+                  AND ua.achievement_id IN ('research_10', 'research_100', 'research_200', 'research_500', 'research_1000', 'research_3000')
+                  AND ua.is_unlocked = false 
+                  AND ua.current_progress >= a.max_progress;
+            """, (user_id,))
+            unlocked_now = cur.fetchall()
+            
+    # Вызываем вне транзакции, чтобы не было дедлоков
+    for ach in unlocked_now:
+        update_achievement_progress_logic(user_id, ach['achievement_id'], 0)
+
 @router.post("/research/step")
-def do_research_step(user_id: str):
+def do_research_step(user_id: str, background_tasks: BackgroundTasks):
     with get_db() as conn:
         with conn.cursor() as cur:
             # 1. Получаем данные игрока
@@ -611,33 +640,8 @@ def do_research_step(user_id: str):
                 RETURNING steps
             """, (new_next_at, cooldown, steps_today, today, user_id))
             new_steps = cur.fetchone()['steps']
-            ## ===== Начисление прогресса ачивок за шаги =====
-            ## 1. Массово увеличиваем прогресс для всех ачивок, защищая от переполнения (LEAST)
-            cur.execute("""
-                UPDATE user_achievements ua
-                SET current_progress = LEAST(ua.current_progress + 1, a.max_progress)
-                FROM achievements a
-                WHERE ua.user_id = %s 
-                  AND ua.achievement_id = a.id
-                  AND ua.achievement_id IN ('research_10', 'research_100', 'research_200', 'research_500', 'research_1000', 'research_3000')
-                  AND ua.is_unlocked = false;
-            """, (user_id,))
-
-            ## 2. Находим те ачивки, которые ТОЛЬКО ЧТО достигли максимума и еще не разблокированы
-            cur.execute("""
-                SELECT ua.achievement_id 
-                FROM user_achievements ua
-                JOIN achievements a ON ua.achievement_id = a.id
-                WHERE ua.user_id = %s 
-                  AND ua.achievement_id IN ('research_10', 'research_100', 'research_200', 'research_500', 'research_1000', 'research_3000')
-                  AND ua.is_unlocked = false 
-                  AND ua.current_progress >= a.max_progress;
-            """, (user_id,))
-            unlocked_now = cur.fetchall()
-
-            ## 3. Вызываем логику выдачи наград ТОЛЬКО для тех, кто апнулся (передаем amount=0)
-            for ach in unlocked_now:
-                update_achievement_progress_logic(user_id, ach['achievement_id'], 0)
+           # ===== Начисление прогресса ачивок (В ФОНЕ) =====
+            background_tasks.add_task(process_research_achievements, user_id)
 
             # 6. Ролл события
             region_id = row['current_region_id']
