@@ -529,7 +529,7 @@ def process_research_achievements(user_id: str):
                 FROM achievements a
                 WHERE ua.user_id = %s 
                   AND ua.achievement_id = a.id
-                  AND ua.achievement_id IN ('research_10', 'research_100', 'research_200', 'research_500', 'research_1000', 'research_3000')
+                  AND ua.achievement_id IN ('research_10', 'research_100', 'research_500', 'research_1000', 'research_5000', 'research_10000')
                   AND ua.is_unlocked = false;
             """, (user_id,))
 
@@ -538,7 +538,7 @@ def process_research_achievements(user_id: str):
                 FROM user_achievements ua
                 JOIN achievements a ON ua.achievement_id = a.id
                 WHERE ua.user_id = %s 
-                  AND ua.achievement_id IN ('research_10', 'research_100', 'research_200', 'research_500', 'research_1000', 'research_3000')
+                  AND ua.achievement_id IN ('research_10', 'research_100', 'research_500', 'research_1000', 'research_5000', 'research_10000')
                   AND ua.is_unlocked = false 
                   AND ua.current_progress >= a.max_progress;
             """, (user_id,))

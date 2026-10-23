@@ -16,7 +16,7 @@ class GrantUniqueRequest(BaseModel):
 def get_all_achievements():
     conn = get_db()
     cur = conn.cursor()
-    cur.execute("SELECT id, name, description, icon, is_unique, max_progress, exp_reward, coins_reward, gems_reward FROM achievements ORDER BY id")
+    cur.execute("SELECT id, name, description, quest, icon, is_unique, max_progress, exp_reward, coins_reward, gems_reward FROM achievements ORDER BY id")
     rows = cur.fetchall()
     cur.close()
     conn.close()
@@ -153,6 +153,7 @@ def get_achievements_by_user(user_id: str):
                     a.id,
                     a.name,
                     a.description,
+                    a.quest,
                     a.icon,
                     a.is_unique,
                     a.max_progress,
