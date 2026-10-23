@@ -17,12 +17,14 @@ from routers import research # noqa: E402
 app = FastAPI()
 
 # ===== CORS — СТАВИМ СРАЗУ ПОСЛЕ СОЗДАНИЯ APP =====
+origins = [
+    "https://fwfront-kamenistiy.mia0.amvera.tech",
+    "http://localhost:3000", 
+]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        "https://mygame-frontend.vercel.app",
-        "http://localhost:3000",
-    ],
+    allow_origins=origins, # <-- Здесь передаем переменную
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
