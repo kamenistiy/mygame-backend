@@ -254,7 +254,7 @@ def approve_text(text_id: str, admin_id: str) -> dict:
     # Нотификация — вне транзакции
     add_notification(
         str(author_id),
-        'research_text_approved',
+        'system',
         '📜 Заметка одобрена!',
         f'Ваша заметка на тему «{theme}» одобрена и добавлена в игру. Благодарим за вклад!'
     )
@@ -286,7 +286,7 @@ def reject_text(text_id: str, admin_id: str, comment: str) -> dict:
 
     add_notification(
         str(author_id),
-        'research_text_rejected',
+        'system',
         '📜 Заметка отклонена',
         f'Ваша заметка на тему «{theme}» не прошла проверку. Причина: {comment}'
     )
