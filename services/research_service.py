@@ -119,7 +119,7 @@ def pick_random_text(cur, user_id: str) -> dict | None:
 # ПРЕДЛОЖКА ТЕКСТОВ — сабмит, модерация, список
 # ================================================================
 
-MAX_PENDING = 5
+MAX_PENDING = 10
 SUBMIT_COOLDOWN_SEC = 60
 MAX_THEME_LEN = 60
 MAX_CONTENT_LEN = 500
