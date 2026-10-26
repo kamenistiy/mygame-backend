@@ -302,6 +302,7 @@ def get_player_stats(user_id: str):
                 "steps": row['steps'] or 0,
                 "next_step_at": row['next_step_at'].isoformat() if row['next_step_at'] else None,
                 "cooldown_duration": row['cooldown_duration'] or 0,
+                "server_time": datetime.now(timezone.utc).isoformat()
             }
         
 @router.post("/player/stats/update")
@@ -727,7 +728,8 @@ def do_research_step(user_id: str, background_tasks: BackgroundTasks):
                 "cooldown_seconds": cooldown,
                 "next_step_at": new_next_at.isoformat(),
                 "event": event,
-                "level_up": level_up_data
+                "level_up": level_up_data,
+                "server_time": datetime.now(timezone.utc).isoformat()
             }
 
 @router.post("/research/texts/{text_id}/like")
