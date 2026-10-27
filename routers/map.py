@@ -130,7 +130,7 @@ def get_settlement_details(settlement_id: str, lang: str = Query("ru")):
 
 
 @router.get("/position/{user_id}")
-def get_player_position(user_id: str):
+def get_player_position(user_id: str, lang: str = Query("ru")):
     with get_db() as conn:
         with conn.cursor() as cur:
             # 1. Догнать просроченное перемещение
@@ -155,10 +155,13 @@ def get_player_position(user_id: str):
 
             arrival_region_name = None
             if arrival:
+                # ТУТ ДОЛЖНЫ БЫТЬ name и name_en
                 cur.execute("SELECT name, name_en FROM regions WHERE id = %s", (arrival['to_region_id'],))
                 r = cur.fetchone()
                 if r:
                     arrival_region_name = r['name_en'] if lang == 'en' and r['name_en'] else r['name']
+                cur.execute("UPDATE player_movements SET notified = TRUE WHERE id = %s", (arrival['id'],))
+                conn.commit()
 
             # 3. Позиция + счётчики
             cur.execute("""
@@ -183,10 +186,11 @@ def get_player_position(user_id: str):
             if not pos:
                 return {"region_id": None, "city_id": None, "region_name": None,
                         "city_name": None, "travel_background": None, "players_count": 0}
-             # Локализация имен
+
+            # Локализация имен
             r_name = pos['region_name_en'] if lang == 'en' and pos['region_name_en'] else pos['region_name']
             c_name = pos['city_name_en'] if lang == 'en' and pos['city_name_en'] else pos['city_name']
-
+            
             return {
                 "region_id": pos['current_region_id'],
                 "city_id": pos['current_city_id'],
