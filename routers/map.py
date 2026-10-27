@@ -1,4 +1,4 @@
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel
 from datetime import datetime, timezone, timedelta
 from core.db import get_db
@@ -21,6 +21,16 @@ class PositionUpdate(BaseModel):
 
 
 # ========== Хелперы ==========
+def localize(row: dict, lang: str, fields=('name', 'description')) -> dict:
+    if not row or lang != 'en':
+        return row
+    out = dict(row)
+    for f in fields:
+        en_val = row.get(f'{f}_en')
+        if en_val:
+            out[f] = en_val
+    return out
+
 def _finalize_movement_if_due(cur, movement):
     """Если время пешего пути истекло — завершаем его и обновляем позицию.
        Запись НЕ удаляем, чтобы фронт мог узнать о прибытии (arrival_pending)."""
@@ -74,48 +84,49 @@ def _find_path(cur, from_region_id, to_region_id):
 # ========== Эндпоинты ==========
 
 @router.get("/regions")
-def get_regions():
-    """Все регионы для карты мира."""
+def get_regions(lang: str = Query("ru")):
     with get_db() as conn:
         with conn.cursor() as cur:
             cur.execute("""
-                SELECT id, name, description, background_image, map_x, map_y, map_icon
+                SELECT id, name, name_en, description, description_en, background_image, map_x, map_y, map_icon
                 FROM regions
                 ORDER BY name
             """)
-            return {"regions": cur.fetchall()}
+            regions = cur.fetchall()
+            return {"regions": [localize(r, lang) for r in regions]}
 
 
 @router.get("/regions/{region_id}")
-def get_region_details(region_id: str):
-    """Регион + список городов для режима 'Регион'."""
+def get_region_details(region_id: str, lang: str = Query("ru")):
     with get_db() as conn:
         with conn.cursor() as cur:
             cur.execute("SELECT * FROM regions WHERE id = %s", (region_id,))
             region = cur.fetchone()
             if not region:
                 raise HTTPException(404, "Регион не найден")
+            
+            region = localize(region, lang)
 
             cur.execute("""
-                SELECT id, name, description, background_image, map_x, map_y, map_icon
+                SELECT id, name, name_en, description, description_en, background_image, map_x, map_y, map_icon
                 FROM settlements
                 WHERE region_id = %s
                 ORDER BY name
             """, (region_id,))
-            region['settlements'] = cur.fetchall()
+            settlements = cur.fetchall()
+            region['settlements'] = [localize(s, lang) for s in settlements]
             return region
 
 
 @router.get("/settlements/{settlement_id}")
-def get_settlement_details(settlement_id: str):
-    """Город. Пока заглушка — вернёт базовые поля."""
+def get_settlement_details(settlement_id: str, lang: str = Query("ru")):
     with get_db() as conn:
         with conn.cursor() as cur:
             cur.execute("SELECT * FROM settlements WHERE id = %s", (settlement_id,))
             settlement = cur.fetchone()
             if not settlement:
                 raise HTTPException(404, "Город не найден")
-            return settlement
+            return localize(settlement, lang)
 
 
 @router.get("/position/{user_id}")
@@ -144,12 +155,10 @@ def get_player_position(user_id: str):
 
             arrival_region_name = None
             if arrival:
-                cur.execute("SELECT name FROM regions WHERE id = %s", (arrival['to_region_id'],))
+                cur.execute("SELECT name, name_en FROM regions WHERE id = %s", (arrival['to_region_id'],))
                 r = cur.fetchone()
                 if r:
-                    arrival_region_name = r['name']
-                cur.execute("UPDATE player_movements SET notified = TRUE WHERE id = %s", (arrival['id'],))
-                conn.commit()
+                    arrival_region_name = r['name_en'] if lang == 'en' and r['name_en'] else r['name']
 
             # 3. Позиция + счётчики
             cur.execute("""
@@ -157,8 +166,10 @@ def get_player_position(user_id: str):
                     pp.current_region_id,
                     pp.current_city_id,
                     r.name AS region_name,
+                    r.name_en AS region_name_en,
                     r.travel_background,
                     s.name AS city_name,
+                    s.name_en AS city_name_en,
                     (
                         SELECT COUNT(*) FROM player_positions pp2
                         WHERE pp2.current_region_id = pp.current_region_id
@@ -172,13 +183,16 @@ def get_player_position(user_id: str):
             if not pos:
                 return {"region_id": None, "city_id": None, "region_name": None,
                         "city_name": None, "travel_background": None, "players_count": 0}
+             # Локализация имен
+            r_name = pos['region_name_en'] if lang == 'en' and pos['region_name_en'] else pos['region_name']
+            c_name = pos['city_name_en'] if lang == 'en' and pos['city_name_en'] else pos['city_name']
 
             return {
                 "region_id": pos['current_region_id'],
                 "city_id": pos['current_city_id'],
-                "region_name": pos['region_name'],
+                "region_name": r_name,
                 "travel_background": pos['travel_background'], 
-                "city_name": pos['city_name'],
+                "city_name": c_name,
                 "players_count": pos['players_count'] or 0,
                 "in_movement": movement is not None,
                 "arrival_pending": arrival_region_name
@@ -374,7 +388,7 @@ def cancel_movement(user_id: str):
             return {"success": True}
 
 @router.get("/travel-info/{user_id}/{to_region_id}")
-def get_travel_info(user_id: str, to_region_id: str):
+def get_travel_info(user_id: str, to_region_id: str, lang: str = Query("ru")):
     with get_db() as conn:
         with conn.cursor() as cur:
             cur.execute("SELECT current_region_id FROM player_positions WHERE user_id = %s", (user_id,))
@@ -405,8 +419,10 @@ def get_travel_info(user_id: str, to_region_id: str):
                 total_gold += edge['gold_cost'] or 0
                 total_time += edge['time_seconds'] or 0
 
-            cur.execute("SELECT id, name FROM regions WHERE id::text = ANY(%s)", (path,))
-            names = {r['id']: r['name'] for r in cur.fetchall()}
+            cur.execute("SELECT id, name, name_en FROM regions WHERE id::text = ANY(%s)", (path,))
+            names = {}
+            for r in cur.fetchall():
+                names[r['id']] = r['name_en'] if lang == 'en' and r['name_en'] else r['name']    
             path_names = [names.get(rid, '?') for rid in path]
 
             return {
