@@ -25,6 +25,7 @@ import random
 SUPABASE_STORAGE_BASE = "https://onkpedemixygmtllrehp.supabase.co/storage/v1/object/public"
 AVATARS_BUCKET = "avatars"
 
+ALLOWED_LANGS = {"ru", "en"}
 router = APIRouter()
 
 # --- Модели данных ---
@@ -32,6 +33,7 @@ class PlayerUpdate(BaseModel):
     exp: Optional[int] = None
     coins: Optional[int] = None
     level: Optional[int] = None
+    language: Optional[str] = None 
 
 class StatsUpdate(BaseModel):
     body: int
@@ -171,10 +173,16 @@ def update_player(user_id: str, update: PlayerUpdate):
                     new_level += 1
                 new_exp = temp_exp
 
-            # Обновление в БД
+            new_language = player.get("language", "en")
+            if update.language is not None:
+                if update.language not in ALLOWED_LANGS:
+                    raise HTTPException(400, f"Unsupported language: {update.language}")
+                new_language = update.language
+
+            # Обновление в БД (добавляем language = %s и new_language в параметры!)
             cur.execute(
-                "UPDATE players SET exp = %s, coins = %s, level = %s WHERE id = %s RETURNING *",
-                (new_exp, new_coins, new_level, user_id)
+                "UPDATE players SET exp = %s, coins = %s, level = %s, language = %s WHERE id = %s RETURNING *",
+                (new_exp, new_coins, new_level, new_language, user_id)
             )
             updated = cur.fetchone()
             conn.commit()
