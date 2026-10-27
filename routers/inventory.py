@@ -1,4 +1,4 @@
-from fastapi import APIRouter, HTTPException, Depends
+from fastapi import APIRouter, HTTPException, Depends, Query
 from pydantic import BaseModel
 
 from core.db import get_db
@@ -26,7 +26,18 @@ class MoveToJunkRequest(BaseModel):
 class ReturnFromJunkRequest(BaseModel):
     item_id: str
     quantity: int = 1
-    
+
+def localize_item(item: dict, lang: str) -> dict:
+    if not item:
+        return item
+    # Если язык английский и есть перевод — подменяем
+    if lang == 'en':
+        if item.get('name_en'):
+            item['name'] = item['name_en']
+        if item.get('description_en'):
+            item['description'] = item['description_en']
+    return item
+
 @router.post("/item/use")
 def use_item(user_id: str, req: UseItemRequest):
     conn = get_db()
@@ -55,7 +66,7 @@ def use_item(user_id: str, req: UseItemRequest):
     return result
 
 @router.get("/inventory/{user_id}")
-def get_inventory(user_id: str):
+def get_inventory(user_id: str, lang: str = Query("ru")):
     conn = get_db()
     cur = conn.cursor()
     cur.execute("""
@@ -67,7 +78,8 @@ def get_inventory(user_id: str):
     items = cur.fetchall()
     cur.close()
     conn.close()
-    return items
+    # Локализуем каждый предмет
+    return [localize_item(item, lang) for item in items]
 
 @router.post("/inventory/add")
 def add_item(user_id: str, req: AddItemRequest):
@@ -201,11 +213,11 @@ def remove_item_from_inventory(user_id: str, item_id: str, quantity: int = 1) ->
         conn.close()
 
 @router.get("/inventory/junk/{user_id}")
-def get_junk_inventory(user_id: str):
+def get_junk_inventory(user_id: str, lang: str = Query("ru")):
     conn = get_db()
     cur = conn.cursor()
     cur.execute("""
-        SELECT i.id, i.name, i.description, i.icon, j.quantity, i.rarity, i.level, i.price
+        SELECT i.id, i.name, i.name_en, i.description, i.description_en, i.icon, j.quantity, i.rarity, i.level, i.price
         FROM junk_inventory j
         JOIN items i ON j.item_id = i.id
         WHERE j.user_id = %s
@@ -213,14 +225,14 @@ def get_junk_inventory(user_id: str):
     items = cur.fetchall()
     cur.close()
     conn.close()
-    return items
+    return [localize_item(item, lang) for item in items]
 
 @router.get("/items/{item_id}")
-def get_item(item_id: str):
+def get_item(item_id: str, lang: str = Query("ru")):
     with get_db() as conn:
         with conn.cursor() as cur:
             cur.execute("SELECT * FROM items WHERE id = %s", (item_id,))
             row = cur.fetchone()
             if not row:
                 raise HTTPException(404, "Item not found")
-            return dict(row)
+            return localize_item(dict(row), lang)
