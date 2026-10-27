@@ -102,7 +102,7 @@ def use_item_logic(user_id: str, req, conn, cur):
             INSERT INTO avatar_requests (user_id, status)
             VALUES (%s, 'pending')
             RETURNING id
-        """, (user_id, user_id))
+        """, (user_id,))
 
         new_request = cur.fetchone()
         conn.commit()
