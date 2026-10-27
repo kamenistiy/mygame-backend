@@ -1,4 +1,4 @@
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Query
 from core.db import get_db
 from pydantic import BaseModel
 
@@ -11,16 +11,25 @@ class GrantUniqueRequest(BaseModel):
     user_id: str
     note: str | None = None
 
+def localize(row: dict, lang: str, fields=('name', 'description', 'quest')) -> dict:
+    if not row or lang != 'en':
+        return row
+    out = dict(row)
+    for f in fields:
+        en_val = row.get(f'{f}_en')
+        if en_val:
+            out[f] = en_val
+    return out
 
 @router.get("/achievements/all")
-def get_all_achievements():
+def get_all_achievements(lang: str = Query("ru")):
     conn = get_db()
     cur = conn.cursor()
-    cur.execute("SELECT id, name, description, quest, icon, is_unique, max_progress, exp_reward, coins_reward, gems_reward FROM achievements ORDER BY id")
+    cur.execute("SELECT id, name, name_en, description, description_en, quest, quest_en, icon, is_unique, max_progress, exp_reward, coins_reward, gems_reward FROM achievements ORDER BY id")
     rows = cur.fetchall()
     cur.close()
     conn.close()
-    return {"achievements": rows}
+    return {"achievements": [localize(r, lang) for r in rows]}
 
 @router.get("/achievements/progress")
 def get_user_achievement_progress(user_id: str):
@@ -68,16 +77,17 @@ def update_achievement_progress(req: dict):
     return {"success": True}
 
 @router.get("/achievements/unique/owners")
-def get_unique_owners():
-    """Список уникальных достижений с их владельцами (для рейтинга)."""
+def get_unique_owners(lang: str = Query("ru")):
     with get_db() as conn:
         with conn.cursor() as cur:
             cur.execute("""
                 SELECT
                     ua.achievement_id,
                     a.name,
+                    a.name_en,
                     a.icon,
                     a.description,
+                    a.description_en,
                     ua.user_id,
                     p.username,
                     ua.granted_at
@@ -86,22 +96,22 @@ def get_unique_owners():
                 JOIN players p ON p.id = ua.user_id
             """)
             rows = cur.fetchall() or []
-            return {"owners": rows}
+            return {"owners": [localize(r, lang) for r in rows]}
 
 
 @router.get("/achievements/unique/by-user/{user_id}")
-def get_unique_by_user(user_id: str):
-    """Уникальные достижения конкретного игрока (для статистики)."""
+def get_unique_by_user(user_id: str, lang: str = Query("ru")):
     with get_db() as conn:
         with conn.cursor() as cur:
             cur.execute("""
-                SELECT a.id, a.name, a.icon, a.description, ua.granted_at
+                SELECT a.id, a.name, a.name_en, a.icon, a.description, a.description_en, ua.granted_at
                 FROM unique_achievements_owner ua
                 JOIN achievements a ON a.id = ua.achievement_id
                 WHERE ua.user_id = %s
                 ORDER BY ua.granted_at DESC
             """, (user_id,))
-            return {"achievements": cur.fetchall() or []}
+            rows = cur.fetchall() or []
+            return {"achievements": [localize(r, lang) for r in rows]}
 
 
 @router.post("/admin/achievements/unique/grant")
@@ -144,16 +154,18 @@ def revoke_unique_achievement(req: dict):
             return {"success": True}
 
 @router.get("/achievements/by-user/{user_id}")
-def get_achievements_by_user(user_id: str):
-    """Все достижения игрока с именами/иконками — для публичного профиля."""
+def get_achievements_by_user(user_id: str, lang: str = Query("ru")):
     with get_db() as conn:
         with conn.cursor() as cur:
             cur.execute("""
                 SELECT
                     a.id,
                     a.name,
+                    a.name_en,
                     a.description,
+                    a.description_en,
                     a.quest,
+                    a.quest_en,
                     a.icon,
                     a.is_unique,
                     a.max_progress,
@@ -165,4 +177,5 @@ def get_achievements_by_user(user_id: str):
                     ON ua.achievement_id = a.id AND ua.user_id = %s
                 ORDER BY COALESCE(ua.is_unlocked, FALSE) DESC, a.id
             """, (user_id,))
-            return {"achievements": cur.fetchall() or []}
+            rows = cur.fetchall() or []
+            return {"achievements": [localize(r, lang) for r in rows]}
