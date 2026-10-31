@@ -219,11 +219,13 @@ def review_avatar(
             except Exception as e:
                 print(f"Не удалось переместить файл {storage_path}: {e}")
 
-        # 1. Добавляем аватар в библиотеку
+                # 1. Добавляем аватар в библиотеку
         cur.execute("""
-    INSERT INTO user_avatars (user_id, storage_path, is_active)
-    VALUES (%s, %s, %s, (SELECT username FROM players WHERE id = %s))
-    RETURNING id
+            INSERT INTO user_avatars (user_id, storage_path, is_active)
+            VALUES (%s, %s, %s)
+            RETURNING id
+        """, (user_id, new_path, False))
+        avatar_id = cur.fetchone()['id']
 """, (user_id, new_path, False, user_id))
         avatar_id = cur.fetchone()['id']
         cur.execute("SELECT id FROM user_avatars WHERE user_id = %s AND is_active = true", (user_id,))
