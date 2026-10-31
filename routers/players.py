@@ -100,12 +100,15 @@ def get_player(user_id: str):
                 player = cur.fetchone()
                 conn.commit()
 
-                # стартовые штуки
-                add_default_avatars_for_user(user_id)
+                                # 1. Велком (самое первое уведомление)
+                add_notification(user_id, 'system', key='welcome', params={'username': username})
 
-                # ОТПРАВЛЯЕМ УВЕДОМЛЕНИЯ (только один раз!)
-                add_notification(user_id, 'system', key='start_avatars')
+                # 2. Достижение "Благодарность" (alpha_tester)
                 grant_achievement_if_not_obtained(user_id, 'alpha_tester')
+
+                # 3. Стартовые аватары
+                add_default_avatars_for_user(user_id)
+                add_notification(user_id, 'system', key='start_avatars')
 
                 # ===== Стартовая позиция игрока =====
                 cur.execute("SELECT id FROM regions WHERE is_starting = TRUE LIMIT 1")
@@ -119,11 +122,7 @@ def get_player(user_id: str):
                     conn.commit()
                 else:
                     print(f"⚠️ Нет стартового региона (is_starting=TRUE). Игрок {user_id} создан без позиции.")
-
-
-                add_notification(user_id, 'system', key='welcome', params={'username': username})
-                add_notification(user_id, 'system', key='start_avatars')
-
+                    
                 recalc_derived_stats(user_id)
                 cur.execute("SELECT approved_avatars_count FROM players WHERE id = %s", (user_id,))
                 count_row = cur.fetchone()
