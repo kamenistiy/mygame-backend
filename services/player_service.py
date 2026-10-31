@@ -251,6 +251,12 @@ def add_achievement_for_user(user_id: str, achievement_id: str):
             conn.commit()
 
 def add_exp_and_coins(user_id: str, exp_to_add: int = 0, coins_to_add: int = 0):
+    # ЗАЩИТА ОТ NULL ИЗ БАЗЫ
+    if exp_to_add is None:
+        exp_to_add = 0
+    if coins_to_add is None:
+        coins_to_add = 0
+        
     with get_db() as conn:
         with conn.cursor() as cur:
 
