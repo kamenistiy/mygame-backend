@@ -144,12 +144,8 @@ def use_item_logic(user_id: str, req, conn, cur):
         if not removed:
             raise HTTPException(status_code=400, detail="Недостаточно предметов")
 
-        add_notification(
-            user_id,
-            'system',
-            'Очки характеристик сброшены',
-            f'Вы использовали Фолиант смены Пути. У вас {correct_free_points} ед. свободных очков.'
-        )
+        # Уведомление игроку о сбросе статов
+        add_notification(user_id, 'system', key='stats_reset', params={'points': correct_free_points})
 
         return {"success": True, "message": "Stats reset"}
 

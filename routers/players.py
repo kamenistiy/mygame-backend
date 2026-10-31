@@ -58,6 +58,12 @@ def get_player(user_id: str):
     try:
         with get_db() as conn:
             with conn.cursor() as cur:
+                 # ОБНОВЛЯЕМ ВРЕМЯ ОНЛАЙНА
+                cur.execute("UPDATE players SET last_online = NOW() WHERE id = %s", (user_id,))
+                conn.commit()
+
+                cur.execute("SELECT * FROM players WHERE id = %s", (user_id,))
+                player = cur.fetchone()
 
                 cur.execute(
                     "SELECT * FROM players WHERE id = %s",
@@ -119,12 +125,8 @@ def get_player(user_id: str):
                 else:
                     print(f"⚠️ Нет стартового региона (is_starting=TRUE). Игрок {user_id} создан без позиции.")
 
-                add_notification(
-                    user_id,
-                    'system',
-                    'Добро пожаловать!',
-                    f'Привет, {username}! Рады видеть тебя в Fastened World.'
-                )
+                add_notification(user_id, 'system', key='welcome', params={'username': username})
+                add_notification(user_id, 'system', key='start_avatars')
 
                 recalc_derived_stats(user_id)
                 cur.execute("SELECT approved_avatars_count FROM players WHERE id = %s", (user_id,))

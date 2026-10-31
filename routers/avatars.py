@@ -248,8 +248,7 @@ def review_avatar(
         update_achievement_progress_logic(user_id, 'avatar_lover_10', 1)
 
         orig_filename = request.get('original_filename', 'неизвестный файл')
-        add_notification(user_id, 'system', 'Аватар одобрен',
-                         f'Ваша заявка на файл "{orig_filename}" одобрена. Аватар добавлен в библиотеку профиля.')
+        add_notification(user_id, 'system', key='avatar_approved', params={'filename': orig_filename})
 
         return {"success": True}
 
@@ -293,8 +292,7 @@ def review_avatar(
         # Отправляем уведомление игроку об отказе
         orig_filename = request.get('original_filename', 'неизвестный файл')
         reason_text = f" Причина: {req.reason}" if req.reason else ""
-        add_notification(user_id, 'system', 'Аватар отклонён',
-                         f'Ваша заявка на файл "{orig_filename}" отклонена.{reason_text} Фолиант возвращён в инвентарь.')
+        add_notification(user_id, 'system', key='avatar_rejected', params={'filename': orig_filename, 'reason': req.reason})
         return {"success": True}
 
     else:
