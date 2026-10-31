@@ -227,12 +227,37 @@ def update_profile(req: dict):
 def list_players():
     conn = get_db()
     cur = conn.cursor()
-    cur.execute("SELECT id, serial_number, username, level, exp, coins, created_at FROM players")
+    # Добавляем last_online и считаем required_exp
+    cur.execute("""
+        SELECT id, serial_number, username, level, exp, coins, created_at, last_online
+        FROM players
+        ORDER BY created_at DESC
+    """)
     players = cur.fetchall()
+    
+    from datetime import datetime, timezone
+    now = datetime.now(timezone.utc)
+    
+    for p in players:
+        # Считаем нужный опыт
+        p['required_exp'] = required_exp(p['level'])
+        
+        # Определяем онлайн (если заходил меньше 10 минут назад)
+        is_online = False
+        if p.get('last_online'):
+            last_online = p['last_online']
+            if last_online.tzinfo is None:
+                last_online = last_online.replace(tzinfo=timezone.utc)
+            diff_minutes = (now - last_online).total_seconds() / 60
+            if diff_minutes < 10:
+                is_online = True
+        p['is_online'] = is_online
+        
     cur.execute("SELECT COUNT(*) FROM players")
     total = cur.fetchone()['count']
     cur.close()
     conn.close()
+    
     return {"total": total, "players": players}
 
 @router.get("/player/stats/{user_id}")
