@@ -20,20 +20,21 @@ def grant_achievement_if_not_obtained(user_id: str, achievement_id: str):
             # Если запись есть И она уже разблокирована — ничего не делаем
             if existing and existing['is_unlocked']:
                 print("ℹ️ Достижение уже получено ранее")
+                # Проверяем, есть ли уже уведомление (чтобы не спамить)
                 cur.execute("""
                     SELECT 1 FROM notifications
-                    WHERE user_id = %s AND type = 'achievement' AND title = (
-                        SELECT name FROM achievements WHERE id = %s
-                    )
-                """, (user_id, achievement_id))
+                    WHERE user_id = %s AND type = 'achievement' AND title = %s
+                """, (user_id, 'notif.ach_unlocked.title'))
                 
                 if not cur.fetchone():
                     cur.execute("SELECT name FROM achievements WHERE id = %s", (achievement_id,))
                     ach = cur.fetchone()
                     if ach:
                         add_notification(
-                            user_id, 'achievement', ach['name'],
-                            f'Вы получили достижение "{ach["name"]}".'
+                            user_id, 
+                            'achievement', 
+                            key='ach_unlocked', 
+                            params={'name': ach['name']}
                         )
                 return False
 
@@ -83,16 +84,17 @@ def grant_achievement_if_not_obtained(user_id: str, achievement_id: str):
                 conn.commit()
 
             print("ADDING NOTIFICATION")
+            # Отправляем уведомление в новом универсальном формате
             add_notification(
                 user_id,
                 'achievement',
-                reward['name'],
-                f'Вы получили достижение "{reward["name"]}".'
+                key='ach_unlocked',
+                params={'name': reward['name']}
             )
 
             print("✅ DONE")
             return True
-
+            
 def update_achievement_progress_logic(user_id: str, achievement_id: str, increment: int = 1):
     """Увеличивает прогресс достижения. Если достижение выполнено – выдаёт награду."""
     should_grant = False  # Флаг, что нужно выдать награду после закрытия транзакции
