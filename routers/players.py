@@ -78,22 +78,24 @@ def get_player(user_id: str):
                 # username
                 try:
                     user_data = supabase.auth.admin.get_user_by_id(user_id)
-                    username = user_data.user.user_metadata.get(
-                        'username',
-                        'Player'
-                    )
+                    username = user_data.user.user_metadata.get('username', 'Player')
+                    # Читаем язык из метаданных (который передал фронтенд)
+                    new_lang = user_data.user.user_metadata.get('language', 'en')
+                    if new_lang not in ('ru', 'en'):
+                        new_lang = 'en'
 
                 except Exception as e:
                     print(f"Ошибка получения username из Auth: {e}")
                     username = "Player_" + user_id[:8]
+                    new_lang = 'en'
 
-                # создание игрока
+                # создание игрока (ДОБАВЛЕНА КОЛОНКА language)
                 cur.execute("""
                     INSERT INTO players
-                    (id, username, level, exp, coins, created_at)
-                    VALUES (%s, %s, 1, 0, 0, NOW())
+                    (id, username, level, exp, coins, created_at, language)
+                    VALUES (%s, %s, 1, 0, 0, NOW(), %s)
                     RETURNING *
-                """, (user_id, username))
+                """, (user_id, username, new_lang))
 
                 player = cur.fetchone()
                 conn.commit()
@@ -101,18 +103,11 @@ def get_player(user_id: str):
                 # стартовые штуки
                 add_default_avatars_for_user(user_id)
 
-                add_notification(
-                    user_id,
-                    'system',
-                    'Стартовые Аватары',
-                    'Вы получили 10 стартовых Аватаров! Применить их можно во вкладке "Профиль", нажав на значок шестерни.'
-                )
+                # ОТПРАВЛЯЕМ УВЕДОМЛЕНИЯ (только один раз!)
+                add_notification(user_id, 'system', key='start_avatars')
+                grant_achievement_if_not_obtained(user_id, 'alpha_tester')
 
-                grant_achievement_if_not_obtained(
-                    user_id,
-                    'alpha_tester'
-                )
-                                # ===== Стартовая позиция игрока =====
+                # ===== Стартовая позиция игрока =====
                 cur.execute("SELECT id FROM regions WHERE is_starting = TRUE LIMIT 1")
                 start_row = cur.fetchone()
                 if start_row:
@@ -124,6 +119,7 @@ def get_player(user_id: str):
                     conn.commit()
                 else:
                     print(f"⚠️ Нет стартового региона (is_starting=TRUE). Игрок {user_id} создан без позиции.")
+
 
                 add_notification(user_id, 'system', key='welcome', params={'username': username})
                 add_notification(user_id, 'system', key='start_avatars')
