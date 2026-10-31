@@ -221,7 +221,7 @@ def review_avatar(
 
         # 1. Добавляем аватар в библиотеку
         cur.execute("""
-    INSERT INTO user_avatars (user_id, storage_path, is_active, username)
+    INSERT INTO user_avatars (user_id, storage_path, is_active)
     VALUES (%s, %s, %s, (SELECT username FROM players WHERE id = %s))
     RETURNING id
 """, (user_id, new_path, False, user_id))
