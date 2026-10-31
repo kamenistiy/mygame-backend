@@ -184,8 +184,6 @@ def review_avatar(
     req: AvatarReviewRequest,
     admin_user_id: str = Depends(get_admin_user)
 ):
-    # if not is_admin(admin_user_id):
-    #     raise HTTPException(status_code=403, detail="Доступ запрещён")
     print(f"✅ review_avatar вызван: request_id={req.request_id}, action={req.action}, admin={admin_user_id}")
     conn = get_db()
     cur = conn.cursor()
@@ -202,7 +200,8 @@ def review_avatar(
     user_id = request['user_id']
     storage_path = request['storage_path']
     
-        if req.action == 'approve':
+    # ВОТ ЗДЕСЬ БЫЛ ЛИШНИЙ ОТСТУП, ТЕПЕРЬ ВСЁ РОВНО:
+    if req.action == 'approve':
         print("=== APPROVE START ===")
         new_path = storage_path
         
@@ -290,9 +289,9 @@ def review_avatar(
 
         conn.commit()
         print("=== REJECT DONE (commit) ===")
+        
         # Отправляем уведомление игроку об отказе
         orig_filename = request.get('original_filename', 'неизвестный файл')
-        reason_text = f" Причина: {req.reason}" if req.reason else ""
         add_notification(user_id, 'system', key='avatar_rejected', params={'filename': orig_filename, 'reason': req.reason})
         return {"success": True}
 
