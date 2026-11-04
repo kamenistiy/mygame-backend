@@ -329,9 +329,9 @@ def roll_loot_item(cur, region_id: str) -> dict | None:
     zone_id = row['loot_zone_id']
 
     # 2. Загружаем пул предметов для этой зоны
-    cur.execute("""
+        cur.execute("""
         SELECT lzi.item_id, lzi.weight, lzi.min_qty, lzi.max_qty,
-               i.name, i.name_en, i.icon
+               i.name, i.name_en, i.icon, i.rarity
         FROM loot_zone_items lzi
         JOIN items i ON i.id = lzi.item_id
         WHERE lzi.zone_id = %s
@@ -353,5 +353,6 @@ def roll_loot_item(cur, region_id: str) -> dict | None:
         "name": chosen['name'],
         "name_en": chosen['name_en'],
         "icon": chosen['icon'],
-        "quantity": qty
+        "quantity": qty,
+        "rarity": chosen['rarity']
     }
