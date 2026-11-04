@@ -764,8 +764,15 @@ def do_research_step(user_id: str, background_tasks: BackgroundTasks):
 
 @router.post("/research/texts/{text_id}/like")
 def like_text(text_id: str, user_id: str):
+    notif_data = None
+    
     with get_db() as conn:
         with conn.cursor() as cur:
+            # 1. Проверяем, был ли уже лайк от этого игрока
+            cur.execute("SELECT 1 FROM research_text_likes WHERE user_id = %s AND text_id = %s", (user_id, text_id))
+            already_liked = cur.fetchone()
+
+            # 2. Ставим лайк
             cur.execute("""
                 INSERT INTO research_text_likes (user_id, text_id)
                 VALUES (%s, %s)
@@ -773,9 +780,51 @@ def like_text(text_id: str, user_id: str):
             """, (user_id, text_id))
             conn.commit()
 
+            # 3. Считаем общее количество лайков
             cur.execute("SELECT COUNT(*) AS cnt FROM research_text_likes WHERE text_id = %s", (text_id,))
             likes = cur.fetchone()['cnt']
-            return {"likes": int(likes), "user_liked": True}
+
+            # 4. Логика уведомления (если лайк поставлен впервые)
+            if not already_liked:
+                # Проверяем, не отправляли ли мы уже уведомление за этот лайк
+                cur.execute("SELECT 1 FROM research_like_notification_log WHERE liker_id = %s AND text_id = %s", (user_id, text_id))
+                if not cur.fetchone():
+                    # Получаем данные автора и текст заметки
+                    cur.execute("SELECT author_id, theme FROM research_texts WHERE id = %s", (text_id,))
+                    text_row = cur.fetchone()
+                    
+                    # Запрещаем отправлять уведомление, если автор лайкнул сам себя
+                    if text_row and text_row['author_id'] and str(text_row['author_id']) != user_id:
+                        # Получаем никнейм того, кто лайкнул
+                        cur.execute("SELECT username FROM players WHERE id = %s", (user_id,))
+                        liker_row = cur.fetchone()
+                        
+                        # Записываем в лог, чтобы больше никогда не спамить
+                        cur.execute("INSERT INTO research_like_notification_log (liker_id, text_id) VALUES (%s, %s)", (user_id, text_id))
+                        conn.commit()
+
+                        # Собираем данные для уведомления
+                        notif_data = {
+                            'author_id': str(text_row['author_id']),
+                            'theme': text_row['theme'] or '',
+                            'liker_name': liker_row['username'] if liker_row and liker_row['username'] else 'Player',
+                            'liker_id': str(user_id)
+                        }
+
+    # 5. Отправляем уведомление ВНЕ транзакции
+    if notif_data:
+        add_notification(
+            notif_data['author_id'],
+            'system',
+            key='text_liked',
+            params={
+                'theme': notif_data['theme'],
+                'liker_name': notif_data['liker_name'],
+                'liker_id': notif_data['liker_id']
+            }
+        )
+
+    return {"likes": int(likes), "user_liked": True}
 
 
 @router.delete("/research/texts/{text_id}/like")
