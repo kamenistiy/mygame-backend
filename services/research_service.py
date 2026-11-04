@@ -328,8 +328,8 @@ def roll_loot_item(cur, region_id: str) -> dict | None:
     
     zone_id = row['loot_zone_id']
 
-    # 2. Загружаем пул предметов для этой зоны
-        cur.execute("""
+    # 2. Загружаем пул предметов для этой зоны (добавили i.rarity)
+    cur.execute("""
         SELECT lzi.item_id, lzi.weight, lzi.min_qty, lzi.max_qty,
                i.name, i.name_en, i.icon, i.rarity
         FROM loot_zone_items lzi
@@ -348,6 +348,7 @@ def roll_loot_item(cur, region_id: str) -> dict | None:
     chosen = random.choices(items, weights=weights, k=1)[0]
     qty = random.randint(chosen['min_qty'], chosen['max_qty'])
 
+    # 4. Возвращаем результат, включая редкость для фронтенда
     return {
         "id": chosen['item_id'],
         "name": chosen['name'],
