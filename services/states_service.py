@@ -148,7 +148,7 @@ def get_active_states(user_id: str):
                 state_key = row.get("state_key")
 
                 # Региональное состояние — не имеет таймера, тянем данные из regions
-                 if state_key.startswith('region_'):
+                if state_key.startswith('region_'):
                     cur.execute("""
                         SELECT name, encounters
                         FROM regions
