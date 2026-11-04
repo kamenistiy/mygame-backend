@@ -57,6 +57,33 @@ STATE_INFO = {
     }
 }
 
+def generate_region_description(encounters: dict) -> str:
+    """Динамически собирает описание региона на основе шансов из encounters."""
+    if not encounters:
+        return "Возможные события при исследовании региона неизвестны."
+    
+    # Словарь для красивого вывода
+    names = {
+        'item': 'предмет',
+        'combat': 'бой',
+        'resource': 'ресурсы',
+        'trap': 'западня',
+        'secret': 'секрет',
+        'text': 'путевые заметки'
+    }
+    
+    lines = ["Возможные события при исследовании региона:"]
+    
+    # Сортируем по убыванию шанса (чтобы 100% было сверху)
+    sorted_events = sorted(encounters.items(), key=lambda x: x[1], reverse=True)
+    
+    for key, weight in sorted_events:
+        if weight > 0:
+            name = names.get(key, key)
+            lines.append(f"• {weight}% — {name}")
+            
+    return "\n".join(lines)
+
 def apply_state(user_id: str, state_key: str, duration_seconds: int = 10):
     with get_db() as conn:
         with conn.cursor() as cur:
@@ -121,9 +148,9 @@ def get_active_states(user_id: str):
                 state_key = row.get("state_key")
 
                 # Региональное состояние — не имеет таймера, тянем данные из regions
-                if state_key.startswith('region_'):
+                 if state_key.startswith('region_'):
                     cur.execute("""
-                        SELECT name, state_description
+                        SELECT name, encounters
                         FROM regions
                         WHERE state_key = %s
                     """, (state_key,))
@@ -135,7 +162,7 @@ def get_active_states(user_id: str):
                         "name": r['name'],
                         "type": "location",
                         "icon_class": "state-" + state_key.replace('_', '-'),
-                        "description": r['state_description'] or "",
+                        "description": generate_region_description(r['encounters']),
                         "parameters": {},
                         "expires_at": None
                     })
