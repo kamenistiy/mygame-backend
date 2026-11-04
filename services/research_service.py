@@ -314,3 +314,44 @@ def calc_research_xp(level: int, event_type: str) -> int:
         xp = max(2.0, xp * 5)
         
     return max(1, round(xp))
+
+def roll_loot_item(cur, region_id: str) -> dict | None:
+    """Выбирает случайный предмет из лут-зоны региона с учетом весов."""
+    if not region_id:
+        return None
+
+    # 1. Получаем ID лут-зоны региона
+    cur.execute("SELECT loot_zone_id FROM regions WHERE id = %s", (region_id,))
+    row = cur.fetchone()
+    if not row or not row['loot_zone_id']:
+        return None
+    
+    zone_id = row['loot_zone_id']
+
+    # 2. Загружаем пул предметов для этой зоны
+    cur.execute("""
+        SELECT lzi.item_id, lzi.weight, lzi.min_qty, lzi.max_qty,
+               i.name, i.name_en, i.icon
+        FROM loot_zone_items lzi
+        JOIN items i ON i.id = lzi.item_id
+        WHERE lzi.zone_id = %s
+    """, (zone_id,))
+    items = cur.fetchall()
+    if not items:
+        return None
+
+    # 3. Роллим по весам
+    weights = [max(0, item['weight']) for item in items]
+    if sum(weights) <= 0:
+        return None
+        
+    chosen = random.choices(items, weights=weights, k=1)[0]
+    qty = random.randint(chosen['min_qty'], chosen['max_qty'])
+
+    return {
+        "id": chosen['item_id'],
+        "name": chosen['name'],
+        "name_en": chosen['name_en'],
+        "icon": chosen['icon'],
+        "quantity": qty
+    }

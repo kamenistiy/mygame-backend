@@ -14,7 +14,7 @@ from services.player_service import (
     apply_regen,
     get_equipment_stats
 )
-from services.inventory_service import remove_item_from_inventory
+from services.inventory_service import (remove_item_from_inventory, add_item_to_inventory)
 from services.achievement_service import grant_achievement_if_not_obtained, update_achievement_progress_logic
 from datetime import date, datetime, timezone, time as dt_time, timedelta
 from services.research_service import roll_event, pick_random_text, calc_research_xp
@@ -732,7 +732,7 @@ def do_research_step(user_id: str, background_tasks: BackgroundTasks):
             # Обновляем игрока (опыт и уровень)
             cur.execute("UPDATE players SET exp = %s, level = %s WHERE id = %s", (new_exp, new_level, user_id))
 
-            # 8. Формируем событие
+                        # 8. Формируем событие
             event = {"type": event_key, "xp_gained": xp_gained}
             
             if event_key == 'text':
@@ -741,9 +741,22 @@ def do_research_step(user_id: str, background_tasks: BackgroundTasks):
                     event.update(text_data)
                 else:
                     event['content'] = 'Пока ни одного текста не одобрено. Загляни позже.'
+            
+            elif event_key == 'item':
+                # Импортируем функции (если не импортированы в начале файла, добавь их)
+                from services.research_service import roll_loot_item
+                from services.inventory_service import add_item_to_inventory
+                
+                loot_item = roll_loot_item(cur, region_id)
+                if loot_item:
+                    add_item_to_inventory(user_id, loot_item['id'], loot_item['quantity'])
+                    event.update(loot_item)
+                else:
+                    event['content'] = 'Вы ничего не нашли.'
+                    event['type'] = 'text' # Меняем тип, чтобы UI не пытался рисовать пустой лут
+                    
             else:
                 placeholders = {
-                    'item': 'Найден предмет (скоро)',
                     'combat': 'Вас атаковали! (скоро)',
                     'resource': 'Собраны ресурсы (скоро)',
                     'trap': 'Ловушка! (скоро)',

@@ -33,7 +33,26 @@ CHEST_ITEMS = {
     ],
 }
 
-
+def add_item_to_inventory(user_id: str, item_id: str, quantity: int = 1) -> bool:
+    conn = get_db()
+    cur = conn.cursor()
+    try:
+        cur.execute("""
+            INSERT INTO inventory (user_id, item_id, quantity)
+            VALUES (%s, %s, %s)
+            ON CONFLICT (user_id, item_id)
+            DO UPDATE SET quantity = inventory.quantity + EXCLUDED.quantity
+        """, (user_id, item_id, quantity))
+        conn.commit()
+        return True
+    except Exception as e:
+        print(f"Ошибка добавления предмета: {e}")
+        conn.rollback()
+        return False
+    finally:
+        cur.close()
+        conn.close()
+        
 def remove_item_from_inventory(user_id: str, item_id: str, quantity: int = 1) -> bool:
     conn = get_db()
     cur = conn.cursor()
