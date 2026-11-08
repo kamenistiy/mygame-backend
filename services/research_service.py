@@ -357,3 +357,42 @@ def roll_loot_item(cur, region_id: str) -> dict | None:
         "quantity": qty,
         "rarity": chosen['rarity']
     }
+
+def roll_gathering_node(cur, region_id: str) -> dict | None:
+    if not region_id:
+        return None
+
+    # 1. Роллим редкость (75% обычный, 20% редкий, 5% забавный)
+    roll = random.uniform(0, 100)
+    if roll <= 75:
+        target_rarity = 'Простой'
+    elif roll <= 95:
+        target_rarity = 'Редкий'
+    else:
+        target_rarity = 'Забавный'
+
+    # 2. Выбираем случайную ноду этой редкости в регионе
+    cur.execute("""
+        SELECT id, name, name_en, icon, rarity, item_id, min_hold_time, max_hold_time
+        FROM nodes
+        WHERE region_id = %s AND rarity = %s
+        ORDER BY RANDOM()
+        LIMIT 1
+    """, (region_id, target_rarity))
+    
+    node = cur.fetchone()
+    if not node:
+        return None
+
+    # 3. Генерируем время удержания
+    hold_time = random.randint(node['min_hold_time'], node['max_hold_time'])
+
+    return {
+        "node_id": node['id'],
+        "name": node['name'],
+        "name_en": node['name_en'],
+        "icon": node['icon'],
+        "rarity": node['rarity'],
+        "item_id": node['item_id'],
+        "hold_time": hold_time
+    }

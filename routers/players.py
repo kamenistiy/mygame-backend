@@ -754,11 +754,24 @@ def do_research_step(user_id: str, background_tasks: BackgroundTasks):
                 else:
                     event['content'] = 'Вы ничего не нашли.'
                     event['type'] = 'text' # Меняем тип, чтобы UI не пытался рисовать пустой лут
+
+            elif event_key == 'resource':
+                from services.research_service import roll_gathering_node
+                node_data = roll_gathering_node(cur, region_id)
+                
+                if node_data:
+                    event.update(node_data)
+                    event['content'] = 'Вы нашли место для сбора.' # Заглушка, текст заменит UI
                     
+                    # Запоминаем ноду, чтобы её нельзя было накрутить
+                    cur.execute("UPDATE player_stats SET active_node_id = %s WHERE user_id = %s", 
+                                (node_data['node_id'], user_id))
+                else:
+                    event['content'] = 'Вы ничего не нашли.'
+                    event['type'] = 'text' 
             else:
                 placeholders = {
                     'combat': 'Вас атаковали! (скоро)',
-                    'resource': 'Собраны ресурсы (скоро)',
                     'trap': 'Ловушка! (скоро)',
                     'secret': 'Вы нашли секрет (скоро)'
                 }
@@ -853,3 +866,47 @@ def unlike_text(text_id: str, user_id: str):
             cur.execute("SELECT COUNT(*) AS cnt FROM research_text_likes WHERE text_id = %s", (text_id,))
             likes = cur.fetchone()['cnt']
             return {"likes": int(likes), "user_liked": False}
+
+@router.post("/research/gather")
+def gather_node(user_id: str, node_id: str):
+    with get_db() as conn:
+        with conn.cursor() as cur:
+            # 1. Проверяем, что игрок реально вскрыл эту ноду
+            cur.execute("SELECT active_node_id, gat FROM player_stats WHERE user_id = %s", (user_id,))
+            row = cur.fetchone()
+            
+            if not row or row['active_node_id'] != node_id:
+                raise HTTPException(400, "Неверный узел сбора")
+
+            # 2. Получаем данные ноды (чтобы узнать item_id)
+            cur.execute("SELECT item_id FROM nodes WHERE id = %s", (node_id,))
+            node = cur.fetchone()
+
+            # 3. Считаем добычу по статам (Gathering Efficiency)
+            gat = row['gat'] or 0
+            eff = 100 + (gat / 10) # Переводим сырые статы в проценты
+            
+            base_qty = 1
+            bonus_chance = max(0, eff - 100)
+            extra_qty = 0
+            
+            # Пока шанс больше 100%, даем гарантированные ресурсы
+            while bonus_chance >= 100:
+                extra_qty += 1
+                bonus_chance -= 100
+            
+            # Роллим остаток шанса на последнюю единицу
+            if random.uniform(0, 100) <= bonus_chance:
+                extra_qty += 1
+                
+            total_qty = int(base_qty + extra_qty)
+
+            # 4. Выдаем ресурсы
+            from services.inventory_service import add_item_to_inventory
+            add_item_to_inventory(user_id, node['item_id'], total_qty)
+
+            # 5. Очищаем активный узел (нельзя собрать дважды)
+            cur.execute("UPDATE player_stats SET active_node_id = NULL WHERE user_id = %s", (user_id,))
+            conn.commit()
+
+            return {"success": True, "quantity": total_qty, "item_id": node['item_id']}
