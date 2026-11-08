@@ -371,11 +371,13 @@ def roll_gathering_node(cur, region_id: str) -> dict | None:
     else:
         target_rarity = 'Забавный'
 
-    # 2. Выбираем случайную ноду этой редкости в регионе
+    # 2. Выбираем случайную ноду этой редкости в регионе (+ данные предмета)
     cur.execute("""
-        SELECT id, name, name_en, icon, rarity, item_id, min_hold_time, max_hold_time
-        FROM nodes
-        WHERE region_id = %s AND rarity = %s
+        SELECT n.id, n.name, n.name_en, n.icon, n.rarity, n.item_id, n.min_hold_time, n.max_hold_time,
+               i.name AS item_name, i.name_en AS item_name_en, i.icon AS item_icon
+        FROM nodes n
+        JOIN items i ON n.item_id = i.id
+        WHERE n.region_id = %s AND n.rarity = %s
         ORDER BY RANDOM()
         LIMIT 1
     """, (region_id, target_rarity))
@@ -394,5 +396,8 @@ def roll_gathering_node(cur, region_id: str) -> dict | None:
         "icon": node['icon'],
         "rarity": node['rarity'],
         "item_id": node['item_id'],
+        "item_name": node['item_name'],
+        "item_name_en": node['item_name_en'],
+        "item_icon": node['item_icon'],
         "hold_time": hold_time
     }
