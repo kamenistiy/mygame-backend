@@ -275,7 +275,7 @@ def get_player_stats(user_id: str):
                     current_hp, max_hp, current_mana, max_mana,
                     current_energy, max_energy, free_stat_points,
                     pdf, mdf, pat, mat, ddg, acc, sp, crft, spd, gat, awr,
-                    fame, rep, ins, pvp, pve, unic, steps, next_step_at, cooldown_duration,
+                    fame, rep, ins, pvp, pve, unic, steps, nodes_gathered, next_step_at, cooldown_duration,
                     p.level,
                     COALESCE(p.approved_texts_count, 0) AS approved_texts_count
                 FROM player_stats ps
@@ -330,6 +330,7 @@ def get_player_stats(user_id: str):
                 "pve": row['pve'] or 0,
                 "unic": row['unic'] or 0,
                 "steps": row['steps'] or 0,
+                "nodes_gathered": row['nodes_gathered'] or 0,
                 "next_step_at": row['next_step_at'].isoformat() if row['next_step_at'] else None,
                 "cooldown_duration": row['cooldown_duration'] or 0,
                 "server_time": datetime.now(timezone.utc).isoformat()
@@ -521,6 +522,7 @@ def get_rating():
                     0                        AS pve_epic,
                     COALESCE(ps.unic, 0)     AS unic,
                     COALESCE(ps.steps, 0)     AS steps,
+                    COALESCE(ps.nodes_gathered, 0) AS nodes_gathered,
                     COALESCE((
                         SELECT COUNT(*) FROM user_achievements ua
                         WHERE ua.user_id = p.id AND ua.is_unlocked = true
@@ -904,6 +906,8 @@ def gather_node(user_id: str, node_id: str):
             # 4. Выдаем ресурсы
             from services.inventory_service import add_item_to_inventory
             add_item_to_inventory(user_id, node['item_id'], total_qty)
+            # Увеличиваем счетчик успешных сборов
+            cur.execute("UPDATE player_stats SET nodes_gathered = nodes_gathered + 1 WHERE user_id = %s", (user_id,))
 
             # 5. Очищаем активный узел (нельзя собрать дважды)
             cur.execute("UPDATE player_stats SET active_node_id = NULL WHERE user_id = %s", (user_id,))
