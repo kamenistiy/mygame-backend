@@ -411,8 +411,6 @@ def roll_gathering_node(cur, region_id: str) -> dict | None:
 # Merge-логика: тексты региона ДОБАВЛЯЮТСЯ к дефолтным.
 # ================================================================
 
-FATIGUE_THRESHOLDS = (300, 500, 1000)
-
 TRAP_AVOID_CHANCE = 15.0  # %
 
 _TRAP_DAMAGE_WEIGHTS = {
@@ -498,40 +496,53 @@ def _pick_misadventure_text(cur, region_id: str | None) -> dict:
     return {"subtype": subtype, "ru": chosen['text_ru'], "en": chosen['text_en']}
 
 
-def apply_fatigue_thresholds(
-    cur,
-    user_id: str,
-    prev_steps_today: int,
-    new_steps_today: int,
-) -> list[str]:
-    """Навешивает дебафф усталости при пересечении порогов 300/500/1000.
-    Работает и при прыжке через несколько порогов сразу (например 298 → 305).
-    Возвращает список применённых state_key."""
-    applied: list[str] = []
-    now = datetime.now(timezone.utc)
+def sync_fatigue_state(cur, user_id: str) -> str | None:
+    """Синхронизирует состояние усталости с текущим steps_today.
+    < 300  → 'energized'   (Энергичность)
+    300..499  → 'fatigue_300'
+    500..999  → 'fatigue_500'
+    >= 1000   → 'fatigue_1000'
 
-    for threshold in FATIGUE_THRESHOLDS:
-        if not (prev_steps_today < threshold <= new_steps_today):
-            continue
+    КД от этого НЕ зависит — он считается в do_research_step от steps_today.
+    Возвращает актуальный state_key или None при ошибке."""
+    cur.execute("SELECT steps_today FROM player_stats WHERE user_id = %s", (user_id,))
+    row = cur.fetchone()
+    if not row:
+        return None
+    steps_today = int(row['steps_today'] or 0)
 
-        fatigue_key = f'fatigue_{threshold}'
+    if steps_today >= 1000:
+        target = 'fatigue_1000'
+    elif steps_today >= 500:
+        target = 'fatigue_500'
+    elif steps_today >= 300:
+        target = 'fatigue_300'
+    else:
+        target = 'energized'
+
+    # Удаляем все ступени, кроме целевой
+    cur.execute("""
+        DELETE FROM player_states
+        WHERE user_id = %s
+          AND state_key IN ('energized', 'fatigue_300', 'fatigue_500', 'fatigue_1000')
+          AND state_key != %s
+    """, (user_id, target))
+
+    # Добавляем целевую, если её ещё нет
+    cur.execute("""
+        SELECT 1 FROM player_states
+        WHERE user_id = %s AND state_key = %s
+    """, (user_id, target))
+    if not cur.fetchone():
+        now = datetime.now(timezone.utc)
         tomorrow = now + timedelta(days=1)
         expires_at = datetime.combine(tomorrow, dt_time.min, tzinfo=timezone.utc)
-
-        # Убираем более слабые/старые стадии усталости — оставляем только текущую
-        cur.execute("""
-            DELETE FROM player_states
-            WHERE user_id = %s
-              AND state_key IN ('fatigue_300', 'fatigue_500', 'fatigue_1000')
-        """, (user_id,))
         cur.execute("""
             INSERT INTO player_states (user_id, state_key, expires_at)
             VALUES (%s, %s, %s)
-        """, (user_id, fatigue_key, expires_at))
+        """, (user_id, target, expires_at))
 
-        applied.append(fatigue_key)
-
-    return applied
+    return target
 
 
 def handle_trap_event(cur, user_id: str, region_id: str | None) -> dict:
@@ -548,7 +559,6 @@ def handle_trap_event(cur, user_id: str, region_id: str | None) -> dict:
             "avoided": True,
             "text_ru": text["ru"],
             "text_en": text["en"],
-            "fatigue_thresholds_applied": [],
         }
 
     # 2. Ролл типа урона
@@ -571,7 +581,6 @@ def handle_trap_event(cur, user_id: str, region_id: str | None) -> dict:
         "damage_type": damage_type,
         "text_ru": text["ru"],
         "text_en": text["en"],
-        "fatigue_thresholds_applied": [],
     }
 
     if not stats:
@@ -602,13 +611,12 @@ def handle_trap_event(cur, user_id: str, region_id: str | None) -> dict:
                 "UPDATE player_stats SET steps_today = %s WHERE user_id = %s",
                 (new_steps, user_id),
             )
-            applied = apply_fatigue_thresholds(cur, user_id, steps_today, new_steps)
+            sync_fatigue_state(cur, user_id)
             result.update({
                 "damage_type": "fatigue",
                 "fatigue_gained": fatigue,
                 "redirected_from": damage_type,
                 "steps_today": new_steps,
-                "fatigue_thresholds_applied": applied,
             })
         else:
             new_val = current - damage
@@ -642,9 +650,8 @@ def handle_trap_event(cur, user_id: str, region_id: str | None) -> dict:
             "UPDATE player_stats SET steps_today = %s WHERE user_id = %s",
             (new_steps, user_id),
         )
-        applied = apply_fatigue_thresholds(cur, user_id, steps_today, new_steps)
+        sync_fatigue_state(cur, user_id)
         result["fatigue_gained"] = fatigue
         result["steps_today"] = new_steps
-        result["fatigue_thresholds_applied"] = applied
 
     return result

@@ -5,6 +5,13 @@ from services.player_service import recalc_derived_stats
 
 # Словарь с данными состояний (иконки, типы)
 STATE_INFO = {
+    'energized': {
+        'name': 'Энергичность',
+        'type': 'buff',
+        'icon_class': 'state-energized',
+        'duration': 86400,          # сутки — до обнуления steps_today
+        'description': 'Вы полны сил. Сегодня пройдено менее 300 шагов.',
+    },
     'exhaustion': {
         'name': 'Истощение',
         'type': 'debuff',

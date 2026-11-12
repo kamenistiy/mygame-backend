@@ -647,9 +647,9 @@ def do_research_step(user_id: str, background_tasks: BackgroundTasks):
             """, (new_next_at, cooldown, new_steps_today, today, user_id))
             new_steps = cur.fetchone()['steps']
 
-            # Проверяем пороги усталости для самого шага исследования
-            from services.research_service import apply_fatigue_thresholds
-            apply_fatigue_thresholds(cur, user_id, prev_steps_today, new_steps_today)
+            # Синхронизируем ступень усталости с текущим steps_today
+            from services.research_service import sync_fatigue_state
+            sync_fatigue_state(cur, user_id)
 
             # ===== Начисление прогресса ачивок (В ФОНЕ) =====
             background_tasks.add_task(process_research_achievements, user_id)
