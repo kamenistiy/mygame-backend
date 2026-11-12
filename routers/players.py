@@ -607,51 +607,14 @@ def do_research_step(user_id: str, background_tasks: BackgroundTasks):
                 remaining = int((next_at - now).total_seconds())
                 raise HTTPException(429, f"Идёт исследование — осталось {remaining} сек")
 
-            # 3. Обработка ежедневных шагов и усталости
-            today = now.date()
-            cur.execute("SELECT steps_today, last_step_date FROM player_stats WHERE user_id = %s", (user_id,))
-            st_row = cur.fetchone()
-            steps_today = st_row['steps_today'] if st_row else 0
-            
-            if st_row and st_row['last_step_date'] != today:
-                steps_today = 0 # Сброс на новый день
-                
-            steps_today += 1
-
-                        # Определяем минимальный КД с учетом усталости
+            # 3. Определяем минимальный КД с учетом усталости
             min_cd = 5
-            if steps_today >= 1000: 
+            if new_steps_today >= 1000:
                 min_cd = 10
-            elif steps_today >= 500: 
+            elif new_steps_today >= 500:
                 min_cd = 8
-            elif steps_today >= 300: 
+            elif new_steps_today >= 300:
                 min_cd = 6
-
-            # Навешиваем дебаффы на пороговых значениях (напрямую в БД)
-            if steps_today in [300, 500, 1000]:
-                tomorrow = now + timedelta(days=1)
-                expires_at = datetime.combine(tomorrow, dt_time.min, tzinfo=timezone.utc)
-                
-                fatigue_key = None
-                if steps_today == 300:
-                    fatigue_key = 'fatigue_300'
-                elif steps_today == 500:
-                    fatigue_key = 'fatigue_500'
-                elif steps_today == 1000:
-                    fatigue_key = 'fatigue_1000'
-                
-                if fatigue_key:
-                    # 1. УДАЛЯЕМ все старые стадии усталости
-                    cur.execute("""
-                        DELETE FROM player_states 
-                        WHERE user_id = %s AND state_key IN ('fatigue_300', 'fatigue_500', 'fatigue_1000')
-                    """, (user_id,))
-                    
-                    # 2. ДОБАВЛЯЕМ только новую
-                    cur.execute("""
-                        INSERT INTO player_states (user_id, state_key, expires_at)
-                        VALUES (%s, %s, %s)
-                    """, (user_id, fatigue_key, expires_at))
 
             # 4. Расчет нового кулдауна
             base = random.randint(5, 30) # Разброс от 5 до 30 секунд
@@ -671,9 +634,14 @@ def do_research_step(user_id: str, background_tasks: BackgroundTasks):
                     last_step_date = %s
                 WHERE user_id = %s
                 RETURNING steps
-            """, (new_next_at, cooldown, steps_today, today, user_id))
+            """, (new_next_at, cooldown, new_steps_today, today, user_id))
             new_steps = cur.fetchone()['steps']
-           # ===== Начисление прогресса ачивок (В ФОНЕ) =====
+
+            # Проверяем пороги усталости для самого шага исследования
+            from services.research_service import apply_fatigue_thresholds
+            apply_fatigue_thresholds(cur, user_id, prev_steps_today, new_steps_today)
+
+            # ===== Начисление прогресса ачивок (В ФОНЕ) =====
             background_tasks.add_task(process_research_achievements, user_id)
 
             # 6. Ролл события
@@ -768,13 +736,19 @@ def do_research_step(user_id: str, background_tasks: BackgroundTasks):
                     # Запоминаем ноду, чтобы её нельзя было накрутить
                     cur.execute("UPDATE player_stats SET active_node_id = %s WHERE user_id = %s", 
                                 (node_data['node_id'], user_id))
+
+            elif event_key == 'trap':
+                from services.research_service import handle_trap_event
+                trap_data = handle_trap_event(cur, user_id, region_id)
+                event.update(trap_data)
+            
                 else:
                     event['content'] = 'Вы ничего не нашли.'
                     event['type'] = 'text' 
+
             else:
                 placeholders = {
                     'combat': 'Вас атаковали! (скоро)',
-                    'trap': 'Ловушка! (скоро)',
                     'secret': 'Вы нашли секрет (скоро)'
                 }
                 event['content'] = placeholders.get(event_key, 'Событие (скоро)')
