@@ -129,9 +129,8 @@ def get_active_states(user_id: str):
 
                 # Региональное состояние — не имеет таймера, тянем данные из regions
                 if state_key.startswith('region_'):
-                    # Запрашиваем нужные поля из БД
                     cur.execute("""
-                        SELECT name, name_en, description, description_en
+                        SELECT name, name_en, description, description_en, encounters
                         FROM regions
                         WHERE state_key = %s
                     """, (state_key,))
@@ -142,12 +141,12 @@ def get_active_states(user_id: str):
                     states.append({
                         "id": state_key,
                         "name": r['name'],
-                        "name_en": r.get('name_en') or r['name'], # Фолбэк на русский, если пусто
+                        "name_en": r.get('name_en') or r['name'],
                         "type": "location",
                         "icon_class": "state-" + state_key.replace('_', '-'),
                         "description": r.get('description') or '',
-                        "description_en": r.get('description_en') or r.get('description') or '',
-                        "encounters": r.get('encounters') or {},
+                        "description_en": r.get('description_en') or '',
+                        "encounters": r.get('encounters') or {}, 
                         "parameters": {},
                         "expires_at": None
                     })
