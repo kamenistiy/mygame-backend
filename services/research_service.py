@@ -1,6 +1,8 @@
 import random
 import re
 from pathlib import Path
+from datetime import datetime, timezone, time as dt_time, timedelta
+
 from core.db import get_db
 from services.player_service import required_exp
 from services.notification_service import add_notification
@@ -401,3 +403,248 @@ def roll_gathering_node(cur, region_id: str) -> dict | None:
         "item_icon": node['item_icon'],
         "hold_time": hold_time
     }
+
+# ================================================================
+# ЗЛОКЛЮЧЕНИЯ (MISADVENTURES)
+# Тексты хранятся в БД: misadventure_texts, misadventure_subtype_weights.
+# region_id = NULL → дефолтный пул, применяется ко всем регионам.
+# Merge-логика: тексты региона ДОБАВЛЯЮТСЯ к дефолтным.
+# ================================================================
+
+FATIGUE_THRESHOLDS = (300, 500, 1000)
+
+TRAP_AVOID_CHANCE = 15.0  # %
+
+_TRAP_DAMAGE_WEIGHTS = {
+    "hp": 25,
+    "mp": 20,
+    "energy": 20,
+    "fatigue": 20,
+}
+
+
+def _load_misadventure_texts(cur, region_id: str | None) -> dict:
+    """Возвращает {subtype: [row, ...]} = дефолт + региональные (merge)."""
+    pool: dict[str, list] = {}
+
+    # 1. Дефолтные (region_id IS NULL)
+    cur.execute("""
+        SELECT subtype, text_ru, text_en, weight
+        FROM misadventure_texts
+        WHERE region_id IS NULL AND is_active = TRUE
+    """)
+    for r in cur.fetchall():
+        pool.setdefault(r['subtype'], []).append(r)
+
+    # 2. Региональные (добавляются к дефолтным)
+    if region_id:
+        cur.execute("""
+            SELECT subtype, text_ru, text_en, weight
+            FROM misadventure_texts
+            WHERE region_id = %s AND is_active = TRUE
+        """, (region_id,))
+        for r in cur.fetchall():
+            pool.setdefault(r['subtype'], []).append(r)
+
+    return pool
+
+
+def _load_subtype_weights(cur, region_id: str | None) -> dict:
+    """Веса подтипов. Региональные перекрывают дефолтные."""
+    weights: dict[str, int] = {}
+
+    cur.execute("""
+        SELECT subtype, weight FROM misadventure_subtype_weights
+        WHERE region_id IS NULL
+    """)
+    for r in cur.fetchall():
+        weights[r['subtype']] = int(r['weight'])
+
+    if region_id:
+        cur.execute("""
+            SELECT subtype, weight FROM misadventure_subtype_weights
+            WHERE region_id = %s
+        """, (region_id,))
+        for r in cur.fetchall():
+            weights[r['subtype']] = int(r['weight'])
+
+    return weights
+
+
+def _pick_misadventure_text(cur, region_id: str | None) -> dict:
+    """Случайный текст злоключения с учётом весов."""
+    pool = _load_misadventure_texts(cur, region_id)
+    if not pool:
+        # Совсем пусто (теоретически не должно быть, но пусть будет)
+        return {
+            "subtype": "weather",
+            "ru": "Что-то обрушивается на тебя из ниоткуда...",
+            "en": "Something crashes down on you out of nowhere...",
+        }
+
+    weights_map = _load_subtype_weights(cur, region_id)
+    subtypes = list(pool.keys())
+    subtype_weights = [max(0, weights_map.get(s, 1)) for s in subtypes]
+    if sum(subtype_weights) <= 0:
+        subtype_weights = [1] * len(subtypes)
+
+    subtype = random.choices(subtypes, weights=subtype_weights, k=1)[0]
+    entries = pool[subtype]
+    entry_weights = [max(0, int(e['weight'])) for e in entries]
+    if sum(entry_weights) <= 0:
+        entry_weights = [1] * len(entries)
+
+    chosen = random.choices(entries, weights=entry_weights, k=1)[0]
+    return {"subtype": subtype, "ru": chosen['text_ru'], "en": chosen['text_en']}
+
+
+def apply_fatigue_thresholds(
+    cur,
+    user_id: str,
+    prev_steps_today: int,
+    new_steps_today: int,
+) -> list[str]:
+    """Навешивает дебафф усталости при пересечении порогов 300/500/1000.
+    Работает и при прыжке через несколько порогов сразу (например 298 → 305).
+    Возвращает список применённых state_key."""
+    applied: list[str] = []
+    now = datetime.now(timezone.utc)
+
+    for threshold in FATIGUE_THRESHOLDS:
+        if not (prev_steps_today < threshold <= new_steps_today):
+            continue
+
+        fatigue_key = f'fatigue_{threshold}'
+        tomorrow = now + timedelta(days=1)
+        expires_at = datetime.combine(tomorrow, dt_time.min, tzinfo=timezone.utc)
+
+        # Убираем более слабые/старые стадии усталости — оставляем только текущую
+        cur.execute("""
+            DELETE FROM player_states
+            WHERE user_id = %s
+              AND state_key IN ('fatigue_300', 'fatigue_500', 'fatigue_1000')
+        """, (user_id,))
+        cur.execute("""
+            INSERT INTO player_states (user_id, state_key, expires_at)
+            VALUES (%s, %s, %s)
+        """, (user_id, fatigue_key, expires_at))
+
+        applied.append(fatigue_key)
+
+    return applied
+
+
+def handle_trap_event(cur, user_id: str, region_id: str | None) -> dict:
+    """Обрабатывает злоключение. НЕ коммитит.
+    Предполагается, что базовый шаг исследования (steps_today = prev + 1)
+    уже записан в БД до вызова этой функции."""
+    text = _pick_misadventure_text(cur, region_id)
+
+    # 1. Уклонение
+    if random.uniform(0, 100) < TRAP_AVOID_CHANCE:
+        return {
+            "type": "trap",
+            "subtype": text["subtype"],
+            "avoided": True,
+            "text_ru": text["ru"],
+            "text_en": text["en"],
+            "fatigue_thresholds_applied": [],
+        }
+
+    # 2. Ролл типа урона
+    dmg_types = list(_TRAP_DAMAGE_WEIGHTS.keys())
+    dmg_weights = [_TRAP_DAMAGE_WEIGHTS[t] for t in dmg_types]
+    damage_type = random.choices(dmg_types, weights=dmg_weights, k=1)[0]
+
+    # 3. Текущие статы
+    cur.execute("""
+        SELECT current_hp, max_hp, current_mana, max_mana,
+               current_energy, max_energy, steps_today
+        FROM player_stats WHERE user_id = %s
+    """, (user_id,))
+    stats = cur.fetchone()
+
+    result = {
+        "type": "trap",
+        "subtype": text["subtype"],
+        "avoided": False,
+        "damage_type": damage_type,
+        "text_ru": text["ru"],
+        "text_en": text["en"],
+        "fatigue_thresholds_applied": [],
+    }
+
+    if not stats:
+        result["avoided"] = True
+        return result
+
+    steps_today = int(stats["steps_today"] or 0)
+
+    # ---- HP / MP ----
+    if damage_type in ("hp", "mp"):
+        if damage_type == "hp":
+            current = int(stats["current_hp"] or 0)
+            maximum = int(stats["max_hp"] or 1)
+            field = "current_hp"
+        else:
+            current = int(stats["current_mana"] or 0)
+            maximum = int(stats["max_mana"] or 1)
+            field = "current_mana"
+
+        damage = random.randint(max(1, int(maximum * 0.1)),
+                                max(1, int(maximum * 0.5)))
+
+        if current - damage < 1:
+            # HP/MP слишком мало → урон превращается в усталость
+            fatigue = random.randint(1, 5)
+            new_steps = steps_today + fatigue
+            cur.execute(
+                "UPDATE player_stats SET steps_today = %s WHERE user_id = %s",
+                (new_steps, user_id),
+            )
+            applied = apply_fatigue_thresholds(cur, user_id, steps_today, new_steps)
+            result.update({
+                "damage_type": "fatigue",
+                "fatigue_gained": fatigue,
+                "redirected_from": damage_type,
+                "steps_today": new_steps,
+                "fatigue_thresholds_applied": applied,
+            })
+        else:
+            new_val = current - damage
+            cur.execute(
+                f"UPDATE player_stats SET {field} = %s WHERE user_id = %s",
+                (new_val, user_id),
+            )
+            result["damage"] = damage
+            result["steps_today"] = steps_today
+            result[field] = new_val
+
+    # ---- Energy ----
+    elif damage_type == "energy":
+        current = int(stats["current_energy"] or 0)
+        loss = random.randint(1, 3)
+        new_val = max(0, current - loss)
+        actual_loss = current - new_val
+        cur.execute(
+            "UPDATE player_stats SET current_energy = %s WHERE user_id = %s",
+            (new_val, user_id),
+        )
+        result["damage"] = actual_loss
+        result["current_energy"] = new_val
+        result["steps_today"] = steps_today
+
+    # ---- Fatigue (чистая) ----
+    else:
+        fatigue = random.randint(1, 5)
+        new_steps = steps_today + fatigue
+        cur.execute(
+            "UPDATE player_stats SET steps_today = %s WHERE user_id = %s",
+            (new_steps, user_id),
+        )
+        applied = apply_fatigue_thresholds(cur, user_id, steps_today, new_steps)
+        result["fatigue_gained"] = fatigue
+        result["steps_today"] = new_steps
+        result["fatigue_thresholds_applied"] = applied
+
+    return result
