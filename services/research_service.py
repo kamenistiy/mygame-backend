@@ -537,7 +537,7 @@ def sync_fatigue_state(cur, user_id: str) -> str | None:
 
 def handle_trap_event(cur, user_id: str, region_id: str | None) -> dict:
     """Обрабатывает злоключение. НЕ коммитит.
-    Предполагается, что базовый шаг исследования (steps_today = prev + 1)
+    Предполагается, что базовый шаг исследования (fatigue = prev + 1)
     уже записан в БД до вызова этой функции."""
     text = _pick_misadventure_text(cur, region_id)
 
@@ -614,7 +614,7 @@ def handle_trap_event(cur, user_id: str, region_id: str | None) -> dict:
                 (new_val, user_id),
             )
             result["damage"] = damage
-            result["steps_today"] = steps_today
+            result["fatigue"] = fatigue_val
             result[field] = new_val
 
     # ---- Energy ----
@@ -629,7 +629,7 @@ def handle_trap_event(cur, user_id: str, region_id: str | None) -> dict:
         )
         result["damage"] = actual_loss
         result["current_energy"] = new_val
-        result["steps_today"] = steps_today
+        result["fatigue"] = fatigue_val
 
     # ---- Fatigue (чистая) ----
     else:
