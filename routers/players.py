@@ -607,7 +607,17 @@ def do_research_step(user_id: str, background_tasks: BackgroundTasks):
                 remaining = int((next_at - now).total_seconds())
                 raise HTTPException(429, f"Идёт исследование — осталось {remaining} сек")
 
-            # 3. Определяем минимальный КД с учетом усталости
+            # 3. Обработка ежедневных шагов и усталости
+            today = now.date()
+            cur.execute("SELECT steps_today, last_step_date FROM player_stats WHERE user_id = %s", (user_id,))
+            st_row = cur.fetchone()
+
+            prev_steps_today = 0
+            if st_row and st_row['last_step_date'] == today:
+                prev_steps_today = int(st_row['steps_today'] or 0)
+
+            new_steps_today = prev_steps_today + 1
+            # 3.1.  Определяем минимальный КД с учетом усталости
             min_cd = 5
             if new_steps_today >= 1000:
                 min_cd = 10
@@ -731,21 +741,18 @@ def do_research_step(user_id: str, background_tasks: BackgroundTasks):
                 
                 if node_data:
                     event.update(node_data)
-                    event['content'] = 'Вы нашли место для сбора.' # Заглушка, текст заменит UI
-                    
-                    # Запоминаем ноду, чтобы её нельзя было накрутить
+                    event['content'] = 'Вы нашли место для сбора.'
                     cur.execute("UPDATE player_stats SET active_node_id = %s WHERE user_id = %s", 
                                 (node_data['node_id'], user_id))
+                else:                                     # ← 16 пробелов (внутри elif resource)
+                    event['content'] = 'Вы ничего не нашли.'
+                    event['type'] = 'text'
 
             elif event_key == 'trap':
                 from services.research_service import handle_trap_event
                 trap_data = handle_trap_event(cur, user_id, region_id)
                 event.update(trap_data)
-            
-                else:
-                    event['content'] = 'Вы ничего не нашли.'
-                    event['type'] = 'text' 
-
+                                                        # ← здесь НИЧЕГО лишнего
             else:
                 placeholders = {
                     'combat': 'Вас атаковали! (скоро)',
