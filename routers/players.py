@@ -275,7 +275,7 @@ def get_player_stats(user_id: str):
                     current_hp, max_hp, current_mana, max_mana,
                     current_energy, max_energy, free_stat_points,
                     pdf, mdf, pat, mat, ddg, acc, sp, crft, spd, gat, awr,
-                    fame, rep, ins, pvp, pve, unic, steps, nodes_gathered, next_step_at, cooldown_duration,
+                    fame, rep, ins, pvp, pve, unic, steps, nodes_gathered, fatigue, next_step_at, cooldown_duration,
                     p.level,
                     COALESCE(p.approved_texts_count, 0) AS approved_texts_count
                 FROM player_stats ps
@@ -331,6 +331,7 @@ def get_player_stats(user_id: str):
                 "unic": row['unic'] or 0,
                 "steps": row['steps'] or 0,
                 "nodes_gathered": row['nodes_gathered'] or 0,
+                "fatigue": row['fatigue'] or 0,
                 "next_step_at": row['next_step_at'].isoformat() if row['next_step_at'] else None,
                 "cooldown_duration": row['cooldown_duration'] or 0,
                 "server_time": datetime.now(timezone.utc).isoformat()
@@ -607,26 +608,27 @@ def do_research_step(user_id: str, background_tasks: BackgroundTasks):
                 remaining = int((next_at - now).total_seconds())
                 raise HTTPException(429, f"Идёт исследование — осталось {remaining} сек")
 
-            # 3. Обработка ежедневных шагов и усталости
+             # 3. Обработка ежедневных шагов и усталости
             today = now.date()
-            cur.execute("SELECT steps_today, last_step_date FROM player_stats WHERE user_id = %s", (user_id,))
+            cur.execute("SELECT fatigue, last_step_date FROM player_stats WHERE user_id = %s", (user_id,))
             st_row = cur.fetchone()
 
-            prev_steps_today = 0
+            prev_fatigue = 0
             if st_row and st_row['last_step_date'] == today:
-                prev_steps_today = int(st_row['steps_today'] or 0)
+                prev_fatigue = int(st_row['fatigue'] or 0)
 
-            new_steps_today = prev_steps_today + 1
-            # 3.1.  Определяем минимальный КД с учетом усталости
+            new_fatigue = prev_fatigue + 1
+
+            # 4. Определяем минимальный КД с учетом усталости
             min_cd = 5
-            if new_steps_today >= 1000:
+            if new_fatigue >= 1000:
                 min_cd = 10
-            elif new_steps_today >= 500:
+            elif new_fatigue >= 500:
                 min_cd = 8
-            elif new_steps_today >= 300:
+            elif new_fatigue >= 300:
                 min_cd = 6
 
-            # 4. Расчет нового кулдауна
+            # 5. Расчет нового кулдауна
             base = random.randint(5, 30) # Разброс от 5 до 30 секунд
             spd_raw = row['spd'] or 0
             factor = max(0.1, 1 - (spd_raw / 2000))
@@ -634,18 +636,17 @@ def do_research_step(user_id: str, background_tasks: BackgroundTasks):
             cooldown = max(min_cd, int(base * factor))
             new_next_at = now + timedelta(seconds=cooldown)
 
-            # 5. Обновляем шаги, кулдаун и счетчик шагов за сегодня в БД
+            # 6. Обновляем шаги, кулдаун и УСТАЛОСТЬ
             cur.execute("""
                 UPDATE player_stats
                 SET steps = steps + 1,
                     next_step_at = %s,
                     cooldown_duration = %s,
-                    steps_today = %s,
+                    fatigue = %s,
                     last_step_date = %s
                 WHERE user_id = %s
                 RETURNING steps
-            """, (new_next_at, cooldown, new_steps_today, today, user_id))
-            new_steps = cur.fetchone()['steps']
+            """, (new_next_at, cooldown, new_fatigue, today, user_id))
 
             # Синхронизируем ступень усталости с текущим steps_today
             from services.research_service import sync_fatigue_state
@@ -654,7 +655,7 @@ def do_research_step(user_id: str, background_tasks: BackgroundTasks):
             # ===== Начисление прогресса ачивок (В ФОНЕ) =====
             background_tasks.add_task(process_research_achievements, user_id)
 
-            # 6. Ролл события
+            # 7. Ролл события
             region_id = row['current_region_id']
             encounters = {}
             if region_id:
@@ -665,7 +666,7 @@ def do_research_step(user_id: str, background_tasks: BackgroundTasks):
 
             event_key = roll_event(encounters)
 
-            # 7. Начисление опыта
+            # 8. Начисление опыта
             cur.execute("SELECT level, exp FROM players WHERE id = %s", (user_id,))
             p_row = cur.fetchone()
             p_level = p_row['level']
@@ -712,7 +713,7 @@ def do_research_step(user_id: str, background_tasks: BackgroundTasks):
             # Обновляем игрока (опыт и уровень)
             cur.execute("UPDATE players SET exp = %s, level = %s WHERE id = %s", (new_exp, new_level, user_id))
 
-                        # 8. Формируем событие
+            # 9. Формируем событие
             event = {"type": event_key, "xp_gained": xp_gained}
             
             if event_key == 'text':

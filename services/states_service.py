@@ -10,7 +10,7 @@ STATE_INFO = {
         'type': 'buff',
         'icon_class': 'state-energized',
         'duration': 86400,          # сутки — до обнуления steps_today
-        'description': 'Вы полны сил. Сегодня пройдено менее 300 шагов.',
+        'description': 'Вы полны сил.',
     },
     'exhaustion': {
         'name': 'Истощение',
@@ -46,19 +46,19 @@ STATE_INFO = {
     },
     'fatigue_300': {
     'name': 'Утомление',
-    'description': 'Сегодня вы выполнили 300 Исследований! Минимальный КД увеличен до 7 сек.',
+    'description': 'Накапливается усталость. Минимальный КД увеличен до 6 сек.',
     'type': 'debuff',
     'icon_class': 'state-fatigue300'
     },
     'fatigue_500': {
         'name': 'Упадок сил',
-        'description': 'Сегодня вы выполнили 500 Исследований! Минимальный КД увеличен до 9 сек.',
+        'description': 'Вы ощущаете упадок сил. Минимальный КД увеличен до 8 сек.',
         'type': 'debuff',
         'icon_class': 'state-fatigue500'
     },
     'fatigue_1000': {
         'name': 'Измор',
-        'description': 'Сегодня вы выполнили 1000 Исследований! Минимальный КД увеличен до 12 сек.',
+        'description': 'Изнеможение даёт о себе знать. Минимальный КД увеличен до 10 сек.',
         'type': 'debuff',
         'icon_class': 'state-fatigue1000'
     }

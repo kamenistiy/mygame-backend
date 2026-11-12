@@ -497,30 +497,22 @@ def _pick_misadventure_text(cur, region_id: str | None) -> dict:
 
 
 def sync_fatigue_state(cur, user_id: str) -> str | None:
-    """Синхронизирует состояние усталости с текущим steps_today.
-    < 300  → 'energized'   (Энергичность)
-    300..499  → 'fatigue_300'
-    500..999  → 'fatigue_500'
-    >= 1000   → 'fatigue_1000'
-
-    КД от этого НЕ зависит — он считается в do_research_step от steps_today.
-    Возвращает актуальный state_key или None при ошибке."""
-    cur.execute("SELECT steps_today FROM player_stats WHERE user_id = %s", (user_id,))
+    cur.execute("SELECT fatigue FROM player_stats WHERE user_id = %s", (user_id,))
     row = cur.fetchone()
     if not row:
         return None
-    steps_today = int(row['steps_today'] or 0)
+    
+    fatigue_val = int(row['fatigue'] or 0) 
 
-    if steps_today >= 1000:
+    if fatigue_val >= 1000:
         target = 'fatigue_1000'
-    elif steps_today >= 500:
+    elif fatigue_val >= 500:
         target = 'fatigue_500'
-    elif steps_today >= 300:
+    elif fatigue_val >= 300:
         target = 'fatigue_300'
     else:
         target = 'energized'
 
-    # Удаляем все ступени, кроме целевой
     cur.execute("""
         DELETE FROM player_states
         WHERE user_id = %s
@@ -528,10 +520,8 @@ def sync_fatigue_state(cur, user_id: str) -> str | None:
           AND state_key != %s
     """, (user_id, target))
 
-    # Добавляем целевую, если её ещё нет
     cur.execute("""
-        SELECT 1 FROM player_states
-        WHERE user_id = %s AND state_key = %s
+        SELECT 1 FROM player_states WHERE user_id = %s AND state_key = %s
     """, (user_id, target))
     if not cur.fetchone():
         now = datetime.now(timezone.utc)
@@ -569,7 +559,7 @@ def handle_trap_event(cur, user_id: str, region_id: str | None) -> dict:
     # 3. Текущие статы
     cur.execute("""
         SELECT current_hp, max_hp, current_mana, max_mana,
-               current_energy, max_energy, steps_today
+               current_energy, max_energy, fatigue
         FROM player_stats WHERE user_id = %s
     """, (user_id,))
     stats = cur.fetchone()
@@ -587,7 +577,7 @@ def handle_trap_event(cur, user_id: str, region_id: str | None) -> dict:
         result["avoided"] = True
         return result
 
-    steps_today = int(stats["steps_today"] or 0)
+    fatigue_val = int(stats["fatigue"] or 0)
 
     # ---- HP / MP ----
     if damage_type in ("hp", "mp"):
@@ -604,19 +594,18 @@ def handle_trap_event(cur, user_id: str, region_id: str | None) -> dict:
                                 max(1, int(maximum * 0.5)))
 
         if current - damage < 1:
-            # HP/MP слишком мало → урон превращается в усталость
-            fatigue = random.randint(1, 5)
-            new_steps = steps_today + fatigue
+            fatigue_gain = random.randint(1, 5)
+            new_fatigue = fatigue_val + fatigue_gain
             cur.execute(
-                "UPDATE player_stats SET steps_today = %s WHERE user_id = %s",
-                (new_steps, user_id),
+                "UPDATE player_stats SET fatigue = %s WHERE user_id = %s", 
+                (new_fatigue, user_id),
             )
             sync_fatigue_state(cur, user_id)
             result.update({
                 "damage_type": "fatigue",
-                "fatigue_gained": fatigue,
+                "fatigue_gained": fatigue_gain,
                 "redirected_from": damage_type,
-                "steps_today": new_steps,
+                "fatigue": new_fatigue,
             })
         else:
             new_val = current - damage
@@ -644,14 +633,14 @@ def handle_trap_event(cur, user_id: str, region_id: str | None) -> dict:
 
     # ---- Fatigue (чистая) ----
     else:
-        fatigue = random.randint(1, 5)
-        new_steps = steps_today + fatigue
+        fatigue_gain = random.randint(1, 5)
+        new_fatigue = fatigue_val + fatigue_gain
         cur.execute(
-            "UPDATE player_stats SET steps_today = %s WHERE user_id = %s",
-            (new_steps, user_id),
+            "UPDATE player_stats SET fatigue = %s WHERE user_id = %s", # <--- UPDATE
+            (new_fatigue, user_id),
         )
         sync_fatigue_state(cur, user_id)
-        result["fatigue_gained"] = fatigue
-        result["steps_today"] = new_steps
+        result["fatigue_gained"] = fatigue_gain
+        result["fatigue"] = new_fatigue
 
     return result
