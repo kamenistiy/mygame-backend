@@ -647,8 +647,9 @@ def do_research_step(user_id: str, background_tasks: BackgroundTasks):
                 WHERE user_id = %s
                 RETURNING steps
             """, (new_next_at, cooldown, new_fatigue, today, user_id))
+            new_steps = cur.fetchone()['steps']
 
-            # Синхронизируем ступень усталости с текущим steps_today
+            # Синхронизируем ступень усталости с текущим fatigue
             from services.research_service import sync_fatigue_state
             sync_fatigue_state(cur, user_id)
 
