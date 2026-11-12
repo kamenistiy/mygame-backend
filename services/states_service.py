@@ -64,33 +64,6 @@ STATE_INFO = {
     }
 }
 
-def generate_region_description(encounters: dict) -> str:
-    """Динамически собирает описание региона на основе шансов из encounters."""
-    if not encounters:
-        return "Возможные события при исследовании региона неизвестны."
-    
-    # Словарь для красивого вывода
-    names = {
-        'item': 'предмет',
-        'combat': 'бой',
-        'resource': 'ресурсы',
-        'trap': 'западня',
-        'secret': 'секрет',
-        'text': 'путевые заметки'
-    }
-    
-    lines = ["Возможные события при исследовании региона:"]
-    
-    # Сортируем по убыванию шанса (чтобы 100% было сверху)
-    sorted_events = sorted(encounters.items(), key=lambda x: x[1], reverse=True)
-    
-    for key, weight in sorted_events:
-        if weight > 0:
-            name = names.get(key, key)
-            lines.append(f"• {weight}% — {name}")
-            
-    return "\n".join(lines)
-
 def apply_state(user_id: str, state_key: str, duration_seconds: int = 10):
     with get_db() as conn:
         with conn.cursor() as cur:
@@ -156,20 +129,25 @@ def get_active_states(user_id: str):
 
                 # Региональное состояние — не имеет таймера, тянем данные из regions
                 if state_key.startswith('region_'):
+                    # Запрашиваем нужные поля из БД
                     cur.execute("""
-                        SELECT name, encounters
+                        SELECT name, name_en, description, description_en
                         FROM regions
                         WHERE state_key = %s
                     """, (state_key,))
                     r = cur.fetchone()
                     if not r:
                         continue
+                    
                     states.append({
                         "id": state_key,
                         "name": r['name'],
+                        "name_en": r.get('name_en') or r['name'], # Фолбэк на русский, если пусто
                         "type": "location",
                         "icon_class": "state-" + state_key.replace('_', '-'),
-                        "description": generate_region_description(r['encounters']),
+                        "description": r.get('description') or '',
+                        "description_en": r.get('description_en') or r.get('description') or '',
+                        "encounters": r.get('encounters') or {},
                         "parameters": {},
                         "expires_at": None
                     })
