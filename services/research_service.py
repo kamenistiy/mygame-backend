@@ -610,10 +610,13 @@ def handle_trap_event(cur, user_id: str, region_id: str | None) -> dict:
         else:
             new_val = current - damage
             cur.execute(
-                # ДОБАВЛЯЕМ сброс таймера регенерации при получении урона
                 f"UPDATE player_stats SET {field} = %s, last_regen_time = NOW() WHERE user_id = %s",
                 (new_val, user_id),
             )
+            # ВОТ ЭТИ ТРИ СТРОКИ НУЖНО ВЕРНУТЬ:
+            result["damage"] = damage
+            result["fatigue"] = fatigue_val
+            result[field] = new_val
 
     # ---- Energy ----
     elif damage_type == "energy":
