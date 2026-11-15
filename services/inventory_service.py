@@ -104,6 +104,8 @@ def use_item_logic(user_id: str, req, conn, cur):
 
     # === AVATAR CERTIFICATE ===
     if req.item_id == 'avatar_certificate':
+        if req.quantity > 1:
+            raise HTTPException(status_code=400, detail="Можно использовать только 1 фолиант за раз")
         cur.execute("""
             SELECT id FROM avatar_requests
             WHERE user_id = %s AND status = 'pending'
@@ -130,6 +132,8 @@ def use_item_logic(user_id: str, req, conn, cur):
 
         # === STATS CERTIFICATE ===
     if req.item_id == 'stats_certificate':
+        if req.quantity > 1:
+            raise HTTPException(status_code=400, detail="Можно использовать только 1 фолиант за раз")
         cur.execute("""
             SELECT p.level
             FROM players p
