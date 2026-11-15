@@ -782,10 +782,29 @@ def do_research_step(user_id: str, background_tasks: BackgroundTasks):
                 from services.research_service import handle_trap_event
                 trap_data = handle_trap_event(cur, user_id, region_id)
                 event.update(trap_data)
-                                                        # ← здесь НИЧЕГО лишнего
+            
+            elif event_key == 'combat':
+                from services.combat_service import roll_enemy_for_region
+                enemy = roll_enemy_for_region(cur, region_id)
+                if enemy:
+                    cur.execute("UPDATE player_stats SET active_enemy_id = %s, enemy_current_hp = %s WHERE user_id = %s", 
+                                (enemy['id'], enemy['max_hp'], user_id))
+                    
+                    event['enemy'] = {
+                        "id": enemy['id'],
+                        "name_ru": enemy['name_ru'],
+                        "name_en": enemy['name_en'],
+                        "icon": enemy['icon'],
+                        "level": enemy['level'],
+                        "max_hp": enemy['max_hp'],
+                        "current_hp": enemy['max_hp']
+                    }
+                else:
+                    event['type'] = 'text'
+                    event['content'] = 'Вы никого не встретили.'
+            
             else:
                 placeholders = {
-                    'combat': 'Вас атаковали! (скоро)',
                     'secret': 'Вы нашли секрет (скоро)'
                 }
                 event['content'] = placeholders.get(event_key, 'Событие (скоро)')

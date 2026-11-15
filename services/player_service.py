@@ -91,9 +91,10 @@ def apply_regen(user_id: str):
                 last = now
 
             delta_seconds = (now - last).total_seconds()
-            # 10% от максимума в минуту -> 0.1 / 60 в секунду
-            regen_per_second_hp = row['max_hp'] * 0.1 / 60
-            regen_per_second_mana = row['max_mana'] * 0.1 / 60
+            
+            # 10% от максимума за 5 минут -> 0.1 / 300 в секунду
+            regen_per_second_hp = row['max_hp'] * 0.1 / 300
+            regen_per_second_mana = row['max_mana'] * 0.1 / 300
 
             new_hp = row['current_hp'] + delta_seconds * regen_per_second_hp
             new_mana = row['current_mana'] + delta_seconds * regen_per_second_mana
