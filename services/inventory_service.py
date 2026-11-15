@@ -216,5 +216,64 @@ def use_item_logic(user_id: str, req, conn, cur):
             "items": items_info
         }
 
+        # === ОБЩАЯ ЛОГИКА ДЛЯ "съедобных" CONSUMABLES ===
+    if item["class"] == "consumable" and item["effect"]:
+        import json
+        try:
+            effect_data = json.loads(item["effect"])
+        except (ValueError, TypeError):
+            effect_data = {}
+
+        # Проверяем, есть ли предмет в нужном количестве
+        cur.execute("SELECT quantity FROM inventory WHERE user_id = %s AND item_id = %s", (user_id, req.item_id))
+        inv_row = cur.fetchone()
+        if not inv_row or inv_row["quantity"] < req.quantity:
+            raise HTTPException(status_code=400, detail="Недостаточно предметов")
+
+        healed_stats = []
+
+        # Восстановление ХП
+        if "heal_hp" in effect_data:
+            heal_amount = effect_data["heal_hp"] * req.quantity
+            cur.execute("""
+                UPDATE player_stats 
+                SET current_hp = LEAST(current_hp + %s, max_hp) 
+                WHERE user_id = %s
+            """, (heal_amount, user_id))
+            healed_stats.append({"stat": "hp", "amount": heal_amount})
+        
+        # Восстановление МП
+        if "heal_mp" in effect_data:
+            heal_amount = effect_data["heal_mp"] * req.quantity
+            cur.execute("""
+                UPDATE player_stats 
+                SET current_mana = LEAST(current_mana + %s, max_mana) 
+                WHERE user_id = %s
+            """, (heal_amount, user_id))
+            healed_stats.append({"stat": "mp", "amount": heal_amount})
+
+        # Восстановление Энергии
+        if "heal_energy" in effect_data:
+            heal_amount = effect_data["heal_energy"] * req.quantity
+            cur.execute("""
+                UPDATE player_stats 
+                SET current_energy = LEAST(current_energy + %s, max_energy) 
+                WHERE user_id = %s
+            """, (heal_amount, user_id))
+            healed_stats.append({"stat": "energy", "amount": heal_amount})
+
+        # Удаляем предмет из инвентаря
+        new_qty = inv_row["quantity"] - req.quantity
+        if new_qty == 0:
+            cur.execute("DELETE FROM inventory WHERE user_id = %s AND item_id = %s", (user_id, req.item_id))
+        else:
+            cur.execute("UPDATE inventory SET quantity = %s WHERE user_id = %s AND item_id = %s", (new_qty, user_id, req.item_id))
+
+        conn.commit()
+        return {
+            "success": True, 
+            "message": "Эффект применен", 
+            "healed_stats": healed_stats
+        }
     # Если ни одно условие не сработало
     raise HTTPException(status_code=400, detail="Не реализовано")

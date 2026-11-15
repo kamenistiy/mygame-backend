@@ -2,6 +2,8 @@ from fastapi import APIRouter, HTTPException, BackgroundTasks
 from pydantic import BaseModel
 from typing import Optional
 from core.db import get_db
+import psycopg2
+import psycopg2.errors
 from services.achievement_service import update_achievement_progress_logic
 from services.states_service import (check_expired_states, get_active_states)
 from core.supabase_client import supabase
@@ -20,6 +22,7 @@ from datetime import date, datetime, timezone, time as dt_time, timedelta
 from services.research_service import roll_event, pick_random_text, calc_research_xp
 
 import random
+import traceback
 
 # ====== Константы для сборки URL аватара ======
 SUPABASE_STORAGE_BASE = "https://onkpedemixygmtllrehp.supabase.co/storage/v1/object/public"
@@ -51,6 +54,21 @@ class UnequipRequest(BaseModel):
     user_id: str
     slot: str
 
+@router.get("/check-username")
+def check_username(username: str):
+    """Проверка занятости ника. Публичный — вызывается до регистрации."""
+    username = (username or "").strip()
+    if not username:
+        raise HTTPException(status_code=400, detail="Empty username")
+    with get_db() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                "SELECT 1 FROM players WHERE LOWER(username) = LOWER(%s) LIMIT 1",
+                (username,)
+            )
+            exists = cur.fetchone() is not None
+    return {"available": not exists, "username": username}
+
 @router.get("/player/{user_id}")
 def get_player(user_id: str):
     if user_id == "null":
@@ -63,13 +81,6 @@ def get_player(user_id: str):
                 conn.commit()
 
                 cur.execute("SELECT * FROM players WHERE id = %s", (user_id,))
-                player = cur.fetchone()
-
-                cur.execute(
-                    "SELECT * FROM players WHERE id = %s",
-                    (user_id,)
-                )
-
                 player = cur.fetchone()
 
                 if player:
@@ -88,17 +99,25 @@ def get_player(user_id: str):
                     print(f"Ошибка получения username из Auth: {e}")
                     username = "Player_" + user_id[:8]
                     new_lang = 'en'
-
+               
                 # создание игрока (ДОБАВЛЕНА КОЛОНКА language)
-                cur.execute("""
-                    INSERT INTO players
-                    (id, username, level, exp, coins, created_at, language)
-                    VALUES (%s, %s, 1, 0, 0, NOW(), %s)
-                    RETURNING *
-                """, (user_id, username, new_lang))
-
-                player = cur.fetchone()
-                conn.commit()
+                try:
+                    cur.execute("""
+                        INSERT INTO players
+                        (id, username, level, exp, coins, created_at, language)
+                        VALUES (%s, %s, 1, 0, 0, NOW(), %s)
+                        RETURNING *
+                    """, (user_id, username, new_lang))
+                    player = cur.fetchone()
+                    conn.commit()
+                except psycopg2.errors.UniqueViolation:
+                    conn.rollback()
+                    traceback.print_exc()
+                    print(f"⚠️ Ник '{username}' уже занят (user_id={user_id})")
+                    raise HTTPException(
+                        status_code=409,
+                        detail=f"Nickname '{username}' is already taken"
+                    )
 
                                 # 1. Велком (самое первое уведомление)
                 add_notification(user_id, 'system', key='welcome', params={'username': username})
@@ -136,7 +155,11 @@ def get_player(user_id: str):
 
                 return player
 
+    except HTTPException:
+        # Уже сформированный ответ (400/404/409/…) — пробрасываем как есть
+        raise
     except Exception as e:
+        traceback.print_exc()
         print("❌ GET_PLAYER ERROR:", e)
         raise HTTPException(status_code=500, detail=str(e))
    
