@@ -104,9 +104,7 @@ def apply_regen(user_id: str):
             new_hp = int(new_hp)
             new_mana = int(new_mana)
 
-            if new_hp == row['current_hp'] and new_mana == row['current_mana']:
-                return
-
+            # ВСЕГДА обновляем last_regen_time, чтобы регенерация не копилась "впрок", пока игрок на фулле
             cur.execute("""
                 UPDATE player_stats
                 SET current_hp = %s, current_mana = %s, last_regen_time = %s
