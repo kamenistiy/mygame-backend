@@ -437,6 +437,11 @@ def equip_item(req: EquipRequest):
             # 4. Если слот занят – вернуть старый предмет в инвентарь
             if old_item:
                 old_item_id = old_item['item_id']
+                
+                # ЗАЩИТА: если пытаемся надеть тот же самый предмет
+                if old_item_id == req.item_id:
+                    raise HTTPException(400, "Этот предмет уже надет")
+                    
                 cur.execute("""
                     INSERT INTO inventory (user_id, item_id, quantity)
                     VALUES (%s, %s, 1)
