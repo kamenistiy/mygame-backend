@@ -1,5 +1,5 @@
 from fastapi import APIRouter, HTTPException
-from services.combat_service import process_combat_round, finish_combat
+from services.combat_service import process_combat_round
 from core.db import get_db
 
 router = APIRouter(tags=["combat"])
